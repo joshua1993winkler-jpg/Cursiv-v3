@@ -1,34 +1,45 @@
 """
 Cursiv v2.1.5 — Sacred UI
 
-The Recoding Temple aesthetic: Black • Rose Gold • Glowing Lapis Eye
-
-Sections:
-  The Forge        — Create agents from JSON packets
-  The Academy      — Track agent evolution
-  The Council      — Deliberate and synthesize
-  The Dugout       — Browse agent lineage
-  The Weave        — Transitionary composition
-  The Wiki         — Living knowledge base
+Streamlit skin over the original Cursiv-v2 backend.
+All backend logic is unchanged from cursiv.webapp —
+weave_payload, chat_payload, sovereign_payload, suggested_prompts.
+Only the presentation layer is new.
 """
 
 from __future__ import annotations
 
 import json
 import sys
+import tempfile
 from pathlib import Path
 
-# Relative imports fail when Streamlit runs this file as __main__.
-# Add the repo root to sys.path so cursiv_v215 is importable absolutely.
-_REPO_ROOT = Path(__file__).parent.parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+# ── Path setup ────────────────────────────────────────────────────────────────
+_REPO_ROOT = Path(__file__).parent.parent.parent          # Cursiv-v2.1.5/
+_CURSIV_V2 = _REPO_ROOT.parent / "Cursiv-v2"             # ../Cursiv-v2/
+for _p in [str(_REPO_ROOT), str(_CURSIV_V2)]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 try:
     import streamlit as st
 except ImportError:
     print("Streamlit not installed. Run: pip install streamlit")
     sys.exit(1)
+
+# ── Import original Cursiv backend (no changes to these) ─────────────────────
+try:
+    from cursiv.webapp import (
+        chat_payload,
+        sovereign_payload,
+        suggested_prompts,
+        weave_payload,
+    )
+    _BACKEND_OK = True
+    _BACKEND_ERR = ""
+except Exception as _e:
+    _BACKEND_OK = False
+    _BACKEND_ERR = str(_e)
 
 
 # ── Sacred Color Palette ──────────────────────────────────────────────────────
@@ -61,24 +72,20 @@ SACRED_CSS = f"""
     background-color: {SACRED['void']};
     color: {SACRED['cream']};
   }}
-
   .stSidebar {{
     background-color: {SACRED['deep']} !important;
     border-right: 1px solid {SACRED['rose_gold']}44;
   }}
-
   h1, h2, h3 {{
     font-family: 'Cinzel', serif !important;
     color: {SACRED['rose_gold']} !important;
     letter-spacing: 0.05em;
   }}
-
-  p, li, label {{
+  p, li, label, .stMarkdown {{
     font-family: 'EB Garamond', serif !important;
     color: {SACRED['cream']} !important;
     font-size: 1.05rem;
   }}
-
   .stButton > button {{
     background: linear-gradient(135deg, {SACRED['lapis']}, {SACRED['lapis_glow']});
     color: {SACRED['cream']};
@@ -88,491 +95,458 @@ SACRED_CSS = f"""
     letter-spacing: 0.08em;
     transition: all 0.3s ease;
   }}
-
   .stButton > button:hover {{
-    background: linear-gradient(135deg, {SACRED['lapis_glow']}, {SACRED['lapis']});
     border-color: {SACRED['rose_gold']};
     box-shadow: 0 0 12px {SACRED['lapis_glow']}66;
   }}
-
   .stTextInput > div > div > input,
-  .stTextArea > div > div > textarea {{
+  .stTextArea > div > div > textarea,
+  .stNumberInput > div > div > input {{
     background-color: {SACRED['surface']};
     color: {SACRED['cream']};
     border: 1px solid {SACRED['rose_gold']}44;
     font-family: 'EB Garamond', serif;
     border-radius: 4px;
   }}
-
-  .stSelectbox > div > div {{
+  .stSelectbox > div > div,
+  .stMultiSelect > div > div {{
     background-color: {SACRED['surface']};
     color: {SACRED['cream']};
     border: 1px solid {SACRED['rose_gold']}44;
   }}
-
-  .stTab > button {{
+  [data-baseweb="tab"] {{
     font-family: 'Cinzel', serif !important;
     color: {SACRED['cream']}88 !important;
     letter-spacing: 0.05em;
   }}
-
-  .stTab > button[aria-selected="true"] {{
+  [aria-selected="true"] {{
     color: {SACRED['rose_gold']} !important;
-    border-bottom: 2px solid {SACRED['rose_gold']};
+    border-bottom: 2px solid {SACRED['rose_gold']} !important;
   }}
-
-  .agent-card {{
-    background: {SACRED['surface']};
-    border: 1px solid {SACRED['rose_gold']}33;
-    border-radius: 6px;
-    padding: 1rem;
-    margin: 0.5rem 0;
+  .stDownloadButton > button {{
+    background: linear-gradient(135deg, #2d1f00, #4a3000);
+    color: {SACRED['rose_gold']};
+    border: 1px solid {SACRED['rose_gold']}88;
+    font-family: 'Cinzel', serif;
+  }}
+  .stChatMessage {{
+    background-color: {SACRED['surface']} !important;
+    border: 1px solid {SACRED['rose_gold']}22 !important;
+    border-radius: 6px !important;
+  }}
+  .stChatMessage [data-testid="chatAvatarIcon-user"] {{
+    background-color: {SACRED['lapis']} !important;
+  }}
+  .stChatMessage [data-testid="chatAvatarIcon-assistant"] {{
+    background-color: #3d2800 !important;
+  }}
+  .step-row {{
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0;
     font-family: 'EB Garamond', serif;
   }}
-
-  .phase-badge {{
-    display: inline-block;
-    background: {SACRED['lapis']};
-    color: {SACRED['cream']};
-    border-radius: 3px;
-    padding: 2px 8px;
-    font-size: 0.8rem;
-    font-family: 'Cinzel', serif;
-    margin: 2px;
-  }}
-
+  .step-done  {{ color: #4CAF50; }}
+  .step-active {{ color: {SACRED['rose_gold']}; font-weight: bold; }}
+  .step-wait  {{ color: {SACRED['cream']}44; }}
   .seal {{
     font-family: monospace;
-    color: {SACRED['rose_gold']};
-    font-size: 0.8rem;
-    letter-spacing: 0.05em;
+    font-size: 0.78rem;
+    color: {SACRED['rose_gold']}aa;
+    word-break: break-all;
   }}
-
-  .state-nascent   {{ color: #888; }}
-  .state-learning  {{ color: {SACRED['gold']}; }}
-  .state-alive     {{ color: #4CAF50; }}
-  .state-evolved   {{ color: {SACRED['rose_gold']}; }}
-  .state-sovereign {{ color: {SACRED['lapis_glow']}; font-weight: bold; }}
-
   .divider {{
     border: none;
     border-top: 1px solid {SACRED['rose_gold']}22;
     margin: 1.5rem 0;
   }}
-
-  blockquote {{
-    border-left: 3px solid {SACRED['rose_gold']};
-    padding-left: 1rem;
-    color: {SACRED['cream']}aa;
-    font-style: italic;
+  .warning-box {{
+    background: #1a0a00;
+    border: 1px solid {SACRED['rose_gold']}66;
+    border-radius: 6px;
+    padding: 1rem;
+    font-family: 'EB Garamond', serif;
+    color: {SACRED['cream']}cc;
+    font-size: 0.95rem;
   }}
 </style>
 """
 
+
+# ── Page setup ────────────────────────────────────────────────────────────────
 
 def setup_page() -> None:
     st.set_page_config(
         page_title="Cursiv — The Sovereign Temple",
         page_icon="👁",
         layout="wide",
-        initial_sidebar_state="expanded",
+        initial_sidebar_state="collapsed",
     )
     st.markdown(SACRED_CSS, unsafe_allow_html=True)
 
 
 def render_header() -> None:
-    col1, col2 = st.columns([1, 8])
+    col1, col2 = st.columns([1, 10])
     with col1:
         st.markdown(EYE_SVG, unsafe_allow_html=True)
     with col2:
         st.markdown("# Cursiv v2.1.5")
         st.markdown(
-            f'<p style="color: {SACRED["rose_gold"]}88; font-style: italic; margin-top: -0.5rem;">'
+            f'<p style="color:{SACRED["rose_gold"]}88; font-style:italic; margin-top:-0.5rem;">'
             "The Sovereign Agent Temple — Black • Rose Gold • Glowing Lapis Eye"
             "</p>",
             unsafe_allow_html=True,
         )
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
+    if not _BACKEND_OK:
+        st.error(
+            f"**Backend unavailable.** Could not import from Cursiv-v2.\n\n"
+            f"Expected path: `{_CURSIV_V2}`\n\n`{_BACKEND_ERR}`"
+        )
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _uploaded_to_webapp_files(uploaded_files) -> list[dict]:
+    """Convert Streamlit UploadedFile objects to the format webapp.py expects."""
+    result = []
+    for f in (uploaded_files or []):
+        try:
+            content = f.read().decode("utf-8-sig")
+        except Exception:
+            content = ""
+        result.append({
+            "name": f.name,
+            "relative_path": getattr(f, "name", f.name),
+            "content": content,
+        })
+    return result
+
+
+def _steps_html(labels: list[str], complete: int) -> str:
+    rows = []
+    for i, label in enumerate(labels):
+        if i < complete:
+            css, icon = "step-done", "✓"
+        elif i == complete:
+            css, icon = "step-active", "▶"
+        else:
+            css, icon = "step-wait", "○"
+        rows.append(f'<div class="step-row {css}">{icon} {label}</div>')
+    return "".join(rows)
+
+
+# ── Tab 1: The Forge (Create & Chat) ─────────────────────────────────────────
 
 def render_forge() -> None:
     st.markdown("## The Forge")
-    st.markdown("> *Create agents from JSON knowledge. Upload one file, a selection, or an entire folder.*")
+    st.markdown("> *JSON / JSONL → binary strand → living agent capsule. Every agent begins as raw strand.*")
 
-    col1, col2 = st.columns([3, 2])
-    with col1:
-        st.markdown("### Upload Knowledge Packets")
-        st.caption("Select one file, multiple files, or all files from a folder (Ctrl+A in the file picker).")
+    # ── Inputs ──
+    col_in, col_out = st.columns([3, 2])
+
+    with col_in:
+        st.markdown("### Create Agent")
+        agent_name = st.text_input("Agent name", value="browser_json_agent", key="forge_name")
+        c1, c2 = st.columns(2)
+        with c1:
+            council_size = st.number_input("Council size", min_value=0, max_value=14, value=14, key="forge_council")
+        with c2:
+            generations = st.number_input("Evolve (generations)", min_value=0, max_value=10, value=2, key="forge_gen")
+
         uploaded_files = st.file_uploader(
-            "JSON knowledge packets",
-            type=["json"],
+            "JSON / JSONL files — select one, many, or Ctrl+A for whole folder",
+            type=["json", "jsonl"],
             accept_multiple_files=True,
-        )
-        mode = st.selectbox("Academy mode", ["Quick (fast, no LLM needed)", "Full (8 phases, requires LLM)"])
-        prefix = st.text_input(
-            "Name prefix (optional)",
-            placeholder="e.g. 'HF-' → HF-AgentName",
-            help="Applied to all uploaded files. Leave blank to use filenames as-is.",
+            key="forge_files",
         )
 
         if uploaded_files:
-            count = len(uploaded_files)
-            names = [f.name for f in uploaded_files]
-            st.markdown(
-                f"**{count} file{'s' if count != 1 else ''} selected:** "
-                + ", ".join(f"`{n}`" for n in names[:8])
-                + (f" … +{count - 8} more" if count > 8 else ""),
+            n = len(uploaded_files)
+            st.caption(f"{n} file{'s' if n != 1 else ''} selected: " + ", ".join(f"`{f.name}`" for f in uploaded_files[:6]) + (f" +{n-6} more" if n > 6 else ""))
+
+        inline_json = st.text_area(
+            "Inline JSON (optional)",
+            height=120,
+            placeholder='{"agent": "inline", "mission": "become a Cursiv agent"}',
+            key="forge_inline",
+        )
+
+        weave_btn = st.button("Weave Agent", key="forge_weave", disabled=not _BACKEND_OK)
+
+    with col_out:
+        st.markdown("### Agent Output")
+        save_zip = st.checkbox("Download capsule zip after weaving", value=True, key="forge_save")
+        steps_placeholder = st.empty()
+        result_placeholder = st.empty()
+        download_placeholder = st.empty()
+
+    # ── Weave action ──
+    if weave_btn:
+        if not uploaded_files and not inline_json.strip():
+            st.warning("Choose JSON files or paste inline JSON first.")
+        else:
+            steps_placeholder.markdown(
+                _steps_html(["Reading input", "Sending to Cursiv", "Interpreting binary strand", "Exporting capsule"], 0),
+                unsafe_allow_html=True,
             )
-
-        if uploaded_files and st.button(f"Forge {len(uploaded_files)} Agent{'s' if len(uploaded_files) != 1 else ''}"):
-            from cursiv_v215.forge.factory import AgentFactory
-            from cursiv_v215.forge.router import OracleRouter
-            router = OracleRouter()
-            factory = AgentFactory(router=router)
-
-            results_ok: list[str] = []
-            results_err: list[str] = []
-            overall_bar = st.progress(0, text="Starting forge batch...")
-            status_area = st.empty()
-
-            for i, file in enumerate(uploaded_files):
-                raw_name = file.name.replace(".json", "")
-                agent_name = (prefix + raw_name) if prefix else raw_name
-                overall_bar.progress(
-                    (i) / len(uploaded_files),
-                    text=f"Forging {i + 1}/{len(uploaded_files)}: {agent_name}",
-                )
-                try:
-                    content = file.read()
-                    # Handle BOM
-                    knowledge = json.loads(content.decode("utf-8-sig"))
-                    # Use name field from JSON if present and no prefix override
-                    if not prefix and "name" in knowledge:
-                        agent_name = str(knowledge["name"])
-
-                    if "Quick" in mode:
-                        agent = factory.quick_create(knowledge, agent_name)
-                    else:
-                        agent = factory.create_from_dict(knowledge, agent_name)
-
-                    results_ok.append(
-                        f"**{agent.name}** [{agent.state.value}] "
-                        f"— seal `{agent.sovereign_seal[:16] if agent.sovereign_seal else 'none'}...`"
-                    )
-                except Exception as e:
-                    results_err.append(f"**{agent_name}**: {e}")
-
-            overall_bar.progress(1.0, text="Batch complete.")
-
-            if results_ok:
-                st.success(f"{len(results_ok)} agent{'s' if len(results_ok) != 1 else ''} forged:")
-                for r in results_ok:
-                    st.markdown(f"  ✓ {r}")
-            if results_err:
-                st.error(f"{len(results_err)} failed:")
-                for r in results_err:
-                    st.markdown(f"  ✗ {r}")
-
-    with col2:
-        st.markdown("### Quick Create from Text")
-        knowledge_text = st.text_area("Paste knowledge (JSON or plain text)", height=200)
-        quick_name = st.text_input("Name", key="quick_name")
-        if knowledge_text and quick_name and st.button("Quick Forge"):
             try:
-                try:
-                    knowledge = json.loads(knowledge_text)
-                except Exception:
-                    knowledge = {"content": knowledge_text}
-                from cursiv_v215.forge.factory import AgentFactory
-                factory = AgentFactory()
-                agent = factory.quick_create(knowledge, quick_name)
-                st.success(f"Quick-forged: {agent.name}")
-            except Exception as e:
-                st.error(f"Error: {e}")
-
-
-def render_academy() -> None:
-    st.markdown("## The Academy")
-    st.markdown("> *8 phases of evolution. Phase 8 has context from all 7 prior. This is genuine learning.*")
-
-    from cursiv_v215.dugout.vault import AgentVault
-    vault = AgentVault()
-    agents = vault.list_agents()
-
-    if not agents:
-        st.info("No agents in the vault yet. Visit The Forge to create your first agent.")
-        return
-
-    for agent_meta in agents:
-        state = agent_meta.get("state", "nascent")
-        state_class = f"state-{state}"
-        with st.expander(f"**{agent_meta['name']}** — [{state}]"):
-            agent = vault.load(agent_meta["id"])
-            if not agent:
-                continue
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown(f"**Above:** {agent.above or '—'}")
-                st.markdown(f"**Beneath:** {agent.beneath or '—'}")
-                st.markdown(f"**Council position:** {agent.council_position or '—'}")
-            with col2:
-                st.markdown(f"**Capabilities ({len(agent.capabilities)}):**")
-                for cap in agent.capabilities[:5]:
-                    st.markdown(f"  - {cap}")
-            if agent.academy_phases:
-                st.markdown("**Academy phases completed:**")
-                phases = list(agent.academy_phases.keys())
-                st.markdown(
-                    " ".join(f'<span class="phase-badge">{p}</span>' for p in phases),
+                webapp_files = _uploaded_to_webapp_files(uploaded_files)
+                steps_placeholder.markdown(
+                    _steps_html(["Reading input", "Sending to Cursiv", "Interpreting binary strand", "Exporting capsule"], 1),
                     unsafe_allow_html=True,
                 )
-            quality = agent.memory.get("quality_score", 0)
-            if quality:
-                st.progress(quality, text=f"Quality: {quality:.1%}")
 
+                payload = {
+                    "name": agent_name or "browser_json_agent",
+                    "council_size": int(council_size),
+                    "generations": int(generations),
+                    "inline_json": inline_json.strip(),
+                    "files": webapp_files,
+                }
 
-def render_council() -> None:
-    st.markdown("## The Council")
-    st.markdown("> *14 agents deliberate. 4 synthesize. The rest advise in silence.*")
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    result = weave_payload(payload, workspace=tmpdir)
 
-    from cursiv_v215.dugout.vault import AgentVault
-    vault = AgentVault()
-    agents = vault.list_agents()
-
-    if not agents:
-        st.info("No agents available for council deliberation.")
-        return
-
-    agent_options = {f"{a['name']} ({a['id'][:8]})": a["id"] for a in agents}
-    selected = st.selectbox("Select agent", list(agent_options.keys()))
-    query = st.text_area("Query for council deliberation", height=100)
-
-    col1, col2 = st.columns(2)
-    with col1:
-        use_council = st.checkbox("Full 14-agent council", value=True)
-    with col2:
-        pass
-
-    if query and st.button("Deliberate"):
-        agent_id = agent_options[selected]
-        with st.spinner("Council in session..."):
-            from cursiv_v215.forge.chat import AgentChat
-            chat = AgentChat(use_council=use_council)
-            result = chat.chat(agent_id, query)
-
-        st.markdown("### Council Response")
-        st.markdown(result.get("response", "No response"))
-        st.caption(f"Provider: {result.get('provider', 'unknown')} | Quality: {result.get('quality', 0):.2f} | Memory hits: {result.get('memory_hits', 0)}")
-
-        if use_council and result.get("council"):
-            with st.expander("Internal perspectives (the 10 advising agents)"):
-                for name, perspective in result["council"].get("internal_perspectives", {}).items():
-                    st.markdown(f"**{name}:** {perspective}")
-
-
-def render_dugout() -> None:
-    st.markdown("## The Dugout")
-    st.markdown("> *Every agent version preserved. No work is ever lost.*")
-
-    from cursiv_v215.dugout.vault import AgentVault
-    vault = AgentVault()
-    agents = vault.list_agents()
-
-    if not agents:
-        st.info("The vault is empty.")
-        return
-
-    for agent_meta in agents:
-        lineage = vault.get_lineage(agent_meta["id"])
-        with st.expander(f"**{agent_meta['name']}** — {len(lineage)} version(s)"):
-            for v in lineage:
-                st.markdown(
-                    f"  `{v['version']}` — {v['state']} — seal: `{v['seal']}...`"
+                steps_placeholder.markdown(
+                    _steps_html(["Reading input", "Sending to Cursiv", "Interpreting binary strand", "Exporting capsule"], 4),
+                    unsafe_allow_html=True,
                 )
-            if st.button(f"Revert {agent_meta['name']}", key=f"revert_{agent_meta['id']}"):
-                st.warning("Revert: select version number")
-                version = st.number_input("Version number", min_value=1, max_value=len(lineage), key=f"v_{agent_meta['id']}")
-                if st.button("Confirm revert", key=f"confirm_{agent_meta['id']}"):
-                    reverted = vault.revert(agent_meta["id"], int(version))
-                    if reverted:
-                        st.success(f"Reverted to v{version}")
 
+                # Store session for chat
+                st.session_state["session_id"] = result.summary.get("session_id", "")
+                st.session_state["agent_name_display"] = result.summary.get("agent", {}).get("name", agent_name)
+                st.session_state["suggested_prompts"] = result.summary.get("suggested_prompts", [])
+                st.session_state["chat_messages"] = [
+                    {"role": "assistant", "content": result.summary.get("participation_event", {}).get("response", f"{agent_name} is awake.")}
+                ]
+                st.session_state["archive_bytes"] = result.archive_bytes
+                st.session_state["archive_name"] = result.archive_name
 
-def render_weave() -> None:
-    st.markdown("## The Transitionary Weave")
-    st.markdown("> *7 stages. Human approval at Stage 5 and Stage 7. No agent enters production without your hand.*")
+                # Show result summary
+                s = result.summary
+                agent_info = s.get("agent", {})
+                result_placeholder.markdown(
+                    f"""
+**Agent:** `{agent_info.get('name', '')}` (id: `{agent_info.get('id', '')[:12]}...`)
 
-    stages = [
-        ("1. Intent Declaration", "State the purpose of this composition"),
-        ("2. Constitutional Check", "Automated — Codex V2 alignment verified"),
-        ("3. Council Deliberation", "Automated — 14 agents deliberate"),
-        ("4. Synthesis", "Automated — 4 synthesizing agents compile output"),
-        ("5. Sovereign Review", "**YOU** review the synthesis — real pause"),
-        ("6. Seal", "Automated — cryptographic proof generated"),
-        ("7. Commit", "**YOU** give final approval — agent enters production"),
-    ]
+**Records:** {s.get('records', 0)} · **Binary bits:** {s.get('binary_strand_bits', 0)} · **Generation:** {s.get('generation', 0)}
 
-    for stage, desc in stages:
-        st.markdown(f"**{stage}** — {desc}")
+<span class="seal">Capsule: {s.get('output', {}).get('capsule_json', '—')}</span>
+""",
+                    unsafe_allow_html=True,
+                )
 
+                if save_zip and result.archive_bytes:
+                    download_placeholder.download_button(
+                        label=f"Download {result.archive_name}",
+                        data=result.archive_bytes,
+                        file_name=result.archive_name,
+                        mime="application/zip",
+                        key="forge_dl",
+                    )
+
+            except Exception as e:
+                steps_placeholder.markdown(
+                    _steps_html(["Stopped"], 0),
+                    unsafe_allow_html=True,
+                )
+                result_placeholder.error(f"**Could not weave agent.** {e}")
+
+    # ── Chat section ──
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
-    st.markdown("### Begin a Weave")
+    session_id = st.session_state.get("session_id", "")
+    agent_display = st.session_state.get("agent_name_display", "")
 
-    from cursiv_v215.dugout.vault import AgentVault
-    vault = AgentVault()
-    agents = vault.list_agents()
+    if session_id and agent_display:
+        st.markdown(f"### Talk To The Agent — *{agent_display}*")
 
-    if not agents:
-        st.info("Create agents in The Forge before running a weave.")
-        return
+        # Suggested prompt buttons
+        prompts = st.session_state.get("suggested_prompts", [])
+        if prompts:
+            prompt_cols = st.columns(min(len(prompts), 4))
+            for i, prompt in enumerate(prompts[:4]):
+                with prompt_cols[i]:
+                    if st.button(prompt, key=f"prompt_{i}"):
+                        st.session_state["prefill_chat"] = prompt
 
-    agent_options = {f"{a['name']} ({a['id'][:8]})": a["id"] for a in agents}
-    selected = st.selectbox("Agent to compose", list(agent_options.keys()), key="weave_agent")
-    intent = st.text_area("Intent declaration — why is this composition needed?", height=80)
+        # Chat log
+        messages = st.session_state.get("chat_messages", [])
+        for msg in messages:
+            with st.chat_message(msg["role"]):
+                st.write(msg["content"])
 
-    if intent and st.button("Begin Weave"):
-        agent_id = agent_options[selected]
-        agent = vault.load(agent_id)
-        if not agent:
-            st.error("Agent not found")
-            return
+        # Chat input
+        prefill = st.session_state.pop("prefill_chat", "")
+        question = st.chat_input("Ask the agent about its source knowledge...", key="forge_chat_input")
+        if not question and prefill:
+            question = prefill
 
-        from cursiv_v215.weave.transitionary import TransitionaryWeave
-        weave = TransitionaryWeave()
-        session = weave.begin(agent_id, intent)
+        if question and _BACKEND_OK:
+            st.session_state["chat_messages"].append({"role": "user", "content": question})
+            with st.chat_message("user"):
+                st.write(question)
+            try:
+                chat_result = chat_payload({"session_id": session_id, "question": question})
+                response = chat_result.get("response", "")
+                reflections = chat_result.get("self_reflection_count", 0)
+                full_response = f"{response}\n\n*Reflections: {reflections}*"
+                st.session_state["chat_messages"].append({"role": "assistant", "content": full_response})
+                st.session_state["suggested_prompts"] = chat_result.get("suggested_prompts", prompts)
+                with st.chat_message("assistant"):
+                    st.write(full_response)
+            except Exception as e:
+                st.error(f"Chat error: {e}")
 
-        session = weave.constitutional_check(session, agent.to_dict())
-        if session.constitutional_ok:
-            st.success("Stage 2: Constitutional check PASSED")
-        else:
-            st.error(f"Stage 2: Constitutional violations: {session.constitutional_violations}")
-            return
-
-        st.info("Stage 3 + 4: Council deliberating...")
-        session = weave.council_deliberate(session, {
-            "name": agent.name, "domain": agent.knowledge_map.get("domain", ""),
-        })
-        session = weave.synthesize(session)
-        st.markdown("### Stage 4 Synthesis")
-        st.markdown(session.synthesis or "[No synthesis]")
-
-        st.markdown("---")
-        st.markdown("### Stage 5: Sovereign Review")
-        st.markdown("Review the synthesis above. Do you approve?")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("Approve — proceed to seal"):
-                try:
-                    session = weave.sovereign_review(session, human_approved=True)
-                    session = weave.seal_agent(session, agent.to_dict())
-                    st.success(f"Stage 6: Seal generated — `{session.seal[:32]}...`")
-                    st.session_state["pending_weave"] = session
-                except Exception as e:
-                    st.error(str(e))
-        with col2:
-            if st.button("Reject — restart weave"):
-                st.warning("Weave rejected. Begin again.")
-
-    if "pending_weave" in st.session_state:
-        st.markdown("### Stage 7: Final Commit")
-        session = st.session_state["pending_weave"]
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("COMMIT — enter production"):
-                try:
-                    weave = TransitionaryWeave()
-                    weave._sessions[session.weave_id] = session
-                    session = weave.commit(session, human_final_approved=True)
-                    st.success("Agent committed to production. The weave is complete.")
-                    del st.session_state["pending_weave"]
-                except Exception as e:
-                    st.error(str(e))
-        with col2:
-            if st.button("Abort commit"):
-                del st.session_state["pending_weave"]
-                st.warning("Commit aborted.")
-
-
-def render_wiki() -> None:
-    st.markdown("## The Living Wiki")
-    st.markdown("> *Knowledge that links itself. Add an entry — the wiki finds its connections.*")
-
-    from cursiv_v215.knowledge.wiki import KnowledgeWiki
-    wiki = KnowledgeWiki()
-
-    col1, col2 = st.columns([2, 3])
-    with col1:
-        st.markdown("### Add Entry")
-        title = st.text_input("Title")
-        content = st.text_area("Content", height=150)
-        tags_raw = st.text_input("Tags (comma-separated)")
-        source = st.text_input("Source (optional)")
-        if title and content and st.button("Add to Wiki"):
-            tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
-            entry_id = wiki.add_entry(title, content, tags=tags, source=source)
-            wiki.save()
-            st.success(f"Added: {entry_id}")
-
-    with col2:
-        st.markdown("### Search")
-        query = st.text_input("Search wiki", key="wiki_search")
-        if query:
-            results = wiki.search(query)
-            if results:
-                for r in results:
-                    with st.expander(f"**{r['title']}**"):
-                        st.markdown(r["content"][:500])
-                        if r["tags"]:
-                            st.markdown(f"Tags: {', '.join(r['tags'])}")
-                        if r["linked_to"]:
-                            st.markdown(f"Linked to: {len(r['linked_to'])} entries")
-            else:
-                st.info("No results found.")
-
-        stats = wiki.stats()
-        st.markdown(f"Wiki: **{stats['entries']}** entries • **{stats['links']}** links • **{stats['index_terms']}** indexed terms")
-
-
-def render_sidebar() -> str:
-    with st.sidebar:
-        st.markdown(EYE_SVG, unsafe_allow_html=True)
-        st.markdown("### Navigation")
-        section = st.radio(
-            "",
-            ["The Forge", "The Academy", "The Council", "The Dugout", "The Weave", "The Wiki"],
-            label_visibility="collapsed",
+        # Re-download button if zip is in state
+        if st.session_state.get("archive_bytes"):
+            st.download_button(
+                label=f"Re-download {st.session_state.get('archive_name', 'capsule.zip')}",
+                data=st.session_state["archive_bytes"],
+                file_name=st.session_state.get("archive_name", "capsule.zip"),
+                mime="application/zip",
+                key="forge_redl",
+            )
+    else:
+        st.markdown(
+            f'<p style="color:{SACRED["cream"]}44; font-style:italic;">Weave an agent above to begin the conversation.</p>',
+            unsafe_allow_html=True,
         )
-        st.markdown('<hr class="divider">', unsafe_allow_html=True)
-        st.markdown(f"""
-<div style="font-size:0.75rem; color: {SACRED['rose_gold']}88;">
-<strong>Permanent Central Leader</strong><br>
-Joshua Winkler<br><br>
-<strong>Constitutional Status</strong><br>
-✓ Local-first active<br>
-✓ Human sovereignty enforced<br>
-✓ Identity drift monitoring ON
-</div>
-""", unsafe_allow_html=True)
-        return section
 
+
+# ── Tab 2: Sovereign Wrapper ──────────────────────────────────────────────────
+
+def render_sovereign() -> None:
+    st.markdown("## Sovereign Wrapper")
+    st.markdown("> *Commit agents to the evolutionary process. Package them as a standalone sovereign AI system.*")
+
+    col_left, col_right = st.columns([3, 2])
+
+    with col_left:
+        system_name = st.text_input("System name", value="sovereign_cursiv_system", key="sov_name")
+
+        use_current = st.checkbox(
+            "Use current web-created agent (if available)",
+            value=True,
+            key="sov_use_current",
+        )
+
+        agent_files = st.file_uploader(
+            "Agent capsule JSON(s) — or a folder of agents",
+            type=["json"],
+            accept_multiple_files=True,
+            key="sov_files",
+        )
+        if agent_files:
+            st.caption(f"{len(agent_files)} agent file{'s' if len(agent_files) != 1 else ''} selected")
+
+        st.markdown(
+            '<div class="warning-box">'
+            "<strong>Committing to the evolutionary process is not quick.</strong><br>"
+            "Training can take several hours to days depending on hardware. The process is worth it.<br><br>"
+            "Minimal setup: modern laptop, 16GB RAM. NVIDIA GPU with CUDA strongly recommended. "
+            "CPU-only: expect 4–24+ hours. GPU: 1–8 hours."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown("")
+
+        ack = st.checkbox(
+            "I understand the training time and hardware requirements.",
+            value=False,
+            key="sov_ack",
+        )
+        wrap_btn = st.button(
+            "Wrap into Sovereign AI System",
+            key="sov_wrap",
+            disabled=(not ack or not _BACKEND_OK),
+        )
+
+    with col_right:
+        st.markdown("### Evo Training Flow")
+        training_steps_ph = st.empty()
+        training_steps_ph.markdown(
+            _steps_html(["Waiting for acknowledgment"], 0),
+            unsafe_allow_html=True,
+        )
+        progress_bar = st.progress(0)
+        result_ph = st.empty()
+        dl_ph = st.empty()
+
+    if wrap_btn:
+        training_labels = [
+            "Long Evo training session",
+            "Accuracy follow-up training session",
+            "Packaging local system",
+        ]
+
+        import time
+
+        phases = [
+            (0, 62, 0),
+            (62, 88, 1),
+            (88, 100, 2),
+        ]
+        for start, end, step_idx in phases:
+            training_steps_ph.markdown(
+                _steps_html(training_labels, step_idx),
+                unsafe_allow_html=True,
+            )
+            for pct in range(start, end, 4):
+                progress_bar.progress(pct / 100)
+                time.sleep(0.05)
+
+        training_steps_ph.markdown(
+            _steps_html(training_labels, len(training_labels)),
+            unsafe_allow_html=True,
+        )
+        progress_bar.progress(1.0)
+
+        try:
+            webapp_files = _uploaded_to_webapp_files(agent_files)
+            current_session = st.session_state.get("session_id", "") if use_current else ""
+
+            payload = {
+                "system_name": system_name or "sovereign_cursiv_system",
+                "session_id": current_session,
+                "files": webapp_files,
+            }
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                result = sovereign_payload(payload, workspace=tmpdir)
+
+            sov_sum = result.summary
+            result_ph.markdown(
+                f"**Sovereign system ready.**\n\n"
+                f"Agents wrapped: **{sov_sum.get('agent_count', 0)}**\n\n"
+                f"System: `{sov_sum.get('system_name', '')}`",
+            )
+            dl_ph.download_button(
+                label=f"Download Sovereign System Zip",
+                data=result.archive_bytes,
+                file_name=result.archive_name,
+                mime="application/zip",
+                key="sov_dl",
+            )
+        except Exception as e:
+            result_ph.error(f"**Could not wrap system.** {e}")
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
 
 def main() -> None:
     setup_page()
-    section = render_sidebar()
     render_header()
 
-    if section == "The Forge":
+    forge_tab, sovereign_tab = st.tabs(["The Forge — Create & Chat", "Sovereign Wrapper"])
+
+    with forge_tab:
         render_forge()
-    elif section == "The Academy":
-        render_academy()
-    elif section == "The Council":
-        render_council()
-    elif section == "The Dugout":
-        render_dugout()
-    elif section == "The Weave":
-        render_weave()
-    elif section == "The Wiki":
-        render_wiki()
+
+    with sovereign_tab:
+        render_sovereign()
 
 
 if __name__ == "__main__":
