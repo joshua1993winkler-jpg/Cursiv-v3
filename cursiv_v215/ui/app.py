@@ -9,6 +9,7 @@ Backend: weave_payload, chat_payload, sovereign_payload — unchanged from Cursi
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import time
@@ -454,6 +455,42 @@ def _jdump(obj) -> str:
         return str(obj)
 
 
+# ── Config persistence (API keys) ─────────────────────────────────────────────
+
+_CONFIG_PATH = _REPO_ROOT / ".cursiv" / "config.json"
+
+
+def _load_config() -> dict:
+    try:
+        if _CONFIG_PATH.exists():
+            return json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+
+def _save_config(cfg: dict) -> None:
+    _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _CONFIG_PATH.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+
+
+def _init_keys_from_config() -> None:
+    """Called once per session to load saved keys into session_state + os.environ."""
+    if st.session_state.get("_cfg_loaded"):
+        return
+    cfg = _load_config()
+    for ss_key, cfg_key, env_key in [
+        ("cfg_xai_key",    "xai_api_key",    "XAI_API_KEY"),
+        ("cfg_openai_key", "openai_api_key", "OPENAI_API_KEY"),
+    ]:
+        val = cfg.get(cfg_key, "").strip()
+        if ss_key not in st.session_state:
+            st.session_state[ss_key] = val
+        if val:
+            os.environ[env_key] = val
+    st.session_state["_cfg_loaded"] = True
+
+
 # ── Tab 1: Create & Chat ──────────────────────────────────────────────────────
 
 def render_create_chat() -> None:
@@ -829,19 +866,140 @@ def render_sovereign() -> None:
             result_ph.error(f"**Could not wrap system.** {exc}")
 
 
+# ── Tab 3: Oracle Keys ────────────────────────────────────────────────────────
+
+def render_oracle_settings() -> None:
+    st.markdown("#### Oracle Key Configuration")
+    st.markdown(
+        f'<p style="color:{_MU}; margin-bottom:1.4rem;">'
+        "Enter your API keys to unlock cloud-powered responses. "
+        f'Keys are saved locally to <code>.cursiv/config.json</code> — '
+        "never sent anywhere except the provider you choose.</p>",
+        unsafe_allow_html=True,
+    )
+
+    col_xai, col_oai = st.columns(2, gap="large")
+
+    with col_xai:
+        st.markdown(
+            f'<p style="color:{_RG}; font-family:Cinzel,serif; '
+            f'font-size:.92rem; margin-bottom:.2rem; letter-spacing:.05em;">xAI · Grok</p>',
+            unsafe_allow_html=True,
+        )
+        st.text_input(
+            "xAI API Key",
+            type="password",
+            placeholder="xai-...",
+            key="cfg_xai_key",
+            label_visibility="collapsed",
+        )
+        st.caption("Keys available at x.ai/api")
+
+    with col_oai:
+        st.markdown(
+            f'<p style="color:{_RG}; font-family:Cinzel,serif; '
+            f'font-size:.92rem; margin-bottom:.2rem; letter-spacing:.05em;">OpenAI · GPT</p>',
+            unsafe_allow_html=True,
+        )
+        st.text_input(
+            "OpenAI API Key",
+            type="password",
+            placeholder="sk-...",
+            key="cfg_openai_key",
+            label_visibility="collapsed",
+        )
+        st.caption("Keys available at platform.openai.com/api-keys")
+
+    st.markdown('<div style="height:.6rem"></div>', unsafe_allow_html=True)
+
+    btn_c, status_c = st.columns([1, 3], gap="medium")
+    with btn_c:
+        save_btn = st.button("Save Keys", key="cfg_save", type="primary")
+        test_btn = st.button("Test Oracle", key="cfg_test")
+    status_ph = status_c.empty()
+
+    if save_btn:
+        xai_val    = (st.session_state.get("cfg_xai_key") or "").strip()
+        openai_val = (st.session_state.get("cfg_openai_key") or "").strip()
+        _save_config({"xai_api_key": xai_val, "openai_api_key": openai_val})
+        if xai_val:
+            os.environ["XAI_API_KEY"] = xai_val
+        elif "XAI_API_KEY" in os.environ:
+            del os.environ["XAI_API_KEY"]
+        if openai_val:
+            os.environ["OPENAI_API_KEY"] = openai_val
+        elif "OPENAI_API_KEY" in os.environ:
+            del os.environ["OPENAI_API_KEY"]
+        active = [n for n, v in [("xAI", xai_val), ("OpenAI", openai_val)] if v]
+        if active:
+            status_ph.success(f"Keys saved — {' + '.join(active)} ready")
+        else:
+            status_ph.info("Keys cleared — Ollama or embedded fallback will be used")
+
+    if test_btn:
+        try:
+            from cursiv_v215.forge.router import OracleRouter
+            xai_val    = (st.session_state.get("cfg_xai_key") or "").strip() or None
+            openai_val = (st.session_state.get("cfg_openai_key") or "").strip() or None
+            router = OracleRouter(xai_api_key=xai_val, openai_api_key=openai_val)
+            with st.spinner("Contacting Oracle…"):
+                reply = router.call("Reply with exactly three words: ORACLE IS ONLINE", max_tokens=20)
+            _LABELS = {"ollama": "Ollama (local)", "xai": "xAI · Grok",
+                       "openai": "OpenAI · GPT", "embedded": "Embedded Fallback"}
+            label = _LABELS.get(router.active_provider, router.active_provider)
+            status_ph.success(f"Oracle active via **{label}** — _{reply[:100]}_")
+        except Exception as exc:
+            status_ph.error(f"Oracle test failed: {exc}")
+
+    # ── Provider priority diagram ─────────────────────────────────────────────
+    st.markdown('<hr class="s-divider">', unsafe_allow_html=True)
+    st.markdown("#### Provider Priority")
+
+    has_xai    = bool((st.session_state.get("cfg_xai_key") or "").strip())
+    has_openai = bool((st.session_state.get("cfg_openai_key") or "").strip())
+
+    rows = [
+        ("1", "Ollama",       "Local · No API needed · always tried first",    True),
+        ("2", "xAI · Grok",   "grok-beta · constitutional alignment",           has_xai),
+        ("3", "OpenAI · GPT", "gpt-4o-mini · broad capability",                 has_openai),
+        ("4", "Embedded",     "Symbolic reasoner · always available offline",   True),
+    ]
+    html = ""
+    for num, name, desc, active in rows:
+        col  = _RG if active else _MU
+        fade = "" if active else " opacity:.4;"
+        html += (
+            f'<div style="display:flex;align-items:center;gap:.9rem;'
+            f'margin-bottom:.55rem;{fade}">'
+            f'<span style="color:{_MU};font-family:Cinzel,serif;font-size:.78rem;'
+            f'min-width:.9rem;">{num}</span>'
+            f'<span style="color:{col};font-family:Cinzel,serif;font-size:.95rem;'
+            f'min-width:7rem;">{name}</span>'
+            f'<span style="color:{_MU};font-size:.88rem;">{desc}</span>'
+            f'</div>'
+        )
+    st.markdown(html, unsafe_allow_html=True)
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main() -> None:
     setup_page()
+    _init_keys_from_config()
     render_header()
 
-    create_tab, sovereign_tab = st.tabs(["Create & Chat", "Sovereign Wrapper"])
+    create_tab, sovereign_tab, oracle_tab = st.tabs(
+        ["Create & Chat", "Sovereign Wrapper", "Oracle Keys"]
+    )
 
     with create_tab:
         render_create_chat()
 
     with sovereign_tab:
         render_sovereign()
+
+    with oracle_tab:
+        render_oracle_settings()
 
 
 if __name__ == "__main__":

@@ -1,0 +1,14 @@
+Metadata-Version: 2.4
+Name: cursiv
+Version: 2.1.5
+Summary: The Sovereign Agent Temple — local-first AI agent operating system
+Author-email: Joshua Winkler <joshua.1993.winkler@gmail.com>
+License: MIT
+Requires-Python: >=3.11
+Requires-Dist: streamlit>=1.32.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: ruff>=0.4; extra == "dev"
+Provides-Extra: ollama
+Provides-Extra: xai
+Provides-Extra: openai

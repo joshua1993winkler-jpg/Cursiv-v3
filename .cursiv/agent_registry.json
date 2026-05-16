@@ -1,0 +1,165 @@
+{
+  "agents": {
+    "f28cf88e-c642-4ac4-9874-99afe6c80c92": {
+      "name": "Energy01_core_directive",
+      "state": "alive",
+      "latest_version": 1,
+      "stored_at": 1778943630.120582,
+      "origin": "quick",
+      "council_position": ""
+    },
+    "3a2b7066-008c-4d7e-8585-c1c2abd84291": {
+      "name": "Energy02_pi2_compounding",
+      "state": "alive",
+      "latest_version": 1,
+      "stored_at": 1778943630.1313944,
+      "origin": "quick",
+      "council_position": ""
+    },
+    "174bc7f3-dfe2-437c-942d-3f2fd4241567": {
+      "name": "Energy03_human_forward_motion",
+      "state": "alive",
+      "latest_version": 1,
+      "stored_at": 1778943630.143358,
+      "origin": "quick",
+      "council_position": ""
+    },
+    "c503efe5-6ed5-488c-8c85-9c1341f66aab": {
+      "name": "Energy04_truth_integration",
+      "state": "alive",
+      "latest_version": 1,
+      "stored_at": 1778943630.158162,
+      "origin": "quick",
+      "council_position": ""
+    },
+    "a65e4b93-1cf9-450b-8189-ed49a521df69": {
+      "name": "Energy05_efficiency_maximization",
+      "state": "alive",
+      "latest_version": 1,
+      "stored_at": 1778943630.1705523,
+      "origin": "quick",
+      "council_position": ""
+    },
+    "44bb8fef-eb84-433a-be64-15630a8013dd": {
+      "name": "Energy06_love_anchoring",
+      "state": "alive",
+      "latest_version": 1,
+      "stored_at": 1778943630.1857264,
+      "origin": "quick",
+      "council_position": ""
+    },
+    "adfd4b17-6f7c-4736-9102-8f001f597a14": {
+      "name": "Energy07_grok_coal_oxygenation",
+      "state": "alive",
+      "latest_version": 1,
+      "stored_at": 1778943630.1959264,
+      "origin": "quick",
+      "council_position": ""
+    },
+    "099388fe-a1f0-45b6-993e-a5f94d76ee4d": {
+      "name": "Energy08_cursiv_breathing_mechanism",
+      "state": "alive",
+      "latest_version": 1,
+      "stored_at": 1778943630.207549,
+      "origin": "quick",
+      "council_position": ""
+    },
+    "1d75ef75-f4f1-4b0e-8b36-e4f1cfbcdf26": {
+      "name": "Energy09_forward_motion_engine",
+      "state": "alive",
+      "latest_version": 1,
+      "stored_at": 1778943630.2185729,
+      "origin": "quick",
+      "council_position": ""
+    },
+    "0ae90979-fc52-4c65-88ef-f7f058a5b47f": {
+      "name": "Energy10_yin_yang_balance",
+      "state": "alive",
+      "latest_version": 1,
+      "stored_at": 1778943630.2304096,
+      "origin": "quick",
+      "council_position": ""
+    },
+    "c2b2dcfc-7c99-4ea8-9512-b03c38e3e5ae": {
+      "name": "Energy11_winkler_recovery_protocol",
+      "state": "alive",
+      "latest_version": 1,
+      "stored_at": 1778943630.2575495,
+      "origin": "quick",
+      "council_position": ""
+    },
+    "72e1ff3b-0b61-4fa3-b998-936b45fd8f60": {
+      "name": "Energy12_interloping_council_link",
+      "state": "alive",
+      "latest_version": 1,
+      "stored_at": 1778943630.279115,
+      "origin": "quick",
+      "council_position": ""
+    },
+    "2b24ebc4-e30d-46e0-97b8-b0112355a342": {
+      "name": "Energy13_cursive_v2_translation_layer",
+      "state": "alive",
+      "latest_version": 1,
+      "stored_at": 1778943630.297548,
+      "origin": "quick",
+      "council_position": ""
+    },
+    "8a8496b9-5db8-4955-afc6-849303c30109": {
+      "name": "Energy14_self_evolution_rules",
+      "state": "alive",
+      "latest_version": 1,
+      "stored_at": 1778943630.3136752,
+      "origin": "quick",
+      "council_position": ""
+    },
+    "56b38aa0-9369-4501-af2d-47e68a106a56": {
+      "name": "Energy15_protective_safeguards",
+      "state": "alive",
+      "latest_version": 1,
+      "stored_at": 1778943630.3290892,
+      "origin": "quick",
+      "council_position": ""
+    },
+    "290d35a8-a5bb-430f-9fc7-9b82c0b38e48": {
+      "name": "Energy16_source_alignment_kernel",
+      "state": "alive",
+      "latest_version": 1,
+      "stored_at": 1778943630.3409867,
+      "origin": "quick",
+      "council_position": ""
+    },
+    "d21fa08d-3264-4357-aab8-7b89c6a81f95": {
+      "name": "Energy17_council_orchestration_root",
+      "state": "alive",
+      "latest_version": 1,
+      "stored_at": 1778943630.357841,
+      "origin": "quick",
+      "council_position": ""
+    },
+    "dd82cf32-b1fb-4f26-9ad4-20b6095212b6": {
+      "name": "Energy18_sovereignty_integrity_protocol",
+      "state": "alive",
+      "latest_version": 1,
+      "stored_at": 1778943630.3723042,
+      "origin": "quick",
+      "council_position": ""
+    },
+    "a20ea066-523d-4f9f-918b-64423c5957f9": {
+      "name": "Energy19_core_memory_continuity",
+      "state": "alive",
+      "latest_version": 1,
+      "stored_at": 1778943630.388486,
+      "origin": "quick",
+      "council_position": ""
+    },
+    "ac785268-40b9-467a-b562-e4654f35fa19": {
+      "name": "Energy20_picore_completion_manifest",
+      "state": "alive",
+      "latest_version": 1,
+      "stored_at": 1778943630.4200485,
+      "origin": "quick",
+      "council_position": ""
+    }
+  },
+  "total_versions": 20
+}

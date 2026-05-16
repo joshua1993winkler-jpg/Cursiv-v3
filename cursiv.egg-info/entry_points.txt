@@ -1,0 +1,2 @@
+[console_scripts]
+cursiv-forge = cursiv_v215.forge.factory:main

@@ -1,0 +1,11 @@
+streamlit>=1.32.0
+
+[dev]
+pytest>=8.0
+ruff>=0.4
+
+[ollama]
+
+[openai]
+
+[xai]
