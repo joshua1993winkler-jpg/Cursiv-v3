@@ -1,17 +1,17 @@
 @echo off
 setlocal enabledelayedexpansion
-title Cursiv v2.1.5 — Setup ^& Launch
+title Cursiv v2.1.5 -- Setup & Launch
 color 07
 cls
 
 echo.
-echo  ╔═══════════════════════════════════════════════╗
-echo  ║     CURSIV v2.1.5 — SETUP ^& LAUNCH           ║
-echo  ║     Black . Rose Gold . Glowing Lapis Eye     ║
-echo  ╚═══════════════════════════════════════════════╝
+echo  +-----------------------------------------------+
+echo  ^|     CURSIV v2.1.5 -- SETUP & LAUNCH          ^|
+echo  ^|     Black . Rose Gold . Glowing Lapis Eye     ^|
+echo  +-----------------------------------------------+
 echo.
 
-:: ── Check Python ─────────────────────────────────────────────────────────────
+:: -- Check Python --------------------------------------------------------------
 echo  [1/5] Checking Python...
 where python >nul 2>&1
 if %errorlevel% neq 0 (
@@ -26,7 +26,7 @@ if %errorlevel% neq 0 (
 for /f "tokens=*" %%v in ('python --version 2^>^&1') do set PYVER=%%v
 echo  [OK] %PYVER%
 
-:: ── Check pip ────────────────────────────────────────────────────────────────
+:: -- Check pip -----------------------------------------------------------------
 echo  [2/5] Checking pip...
 python -m pip --version >nul 2>&1
 if %errorlevel% neq 0 (
@@ -36,60 +36,67 @@ if %errorlevel% neq 0 (
 )
 echo  [OK] pip found
 
-:: ── Upgrade pip silently ──────────────────────────────────────────────────────
+:: -- Upgrade pip ---------------------------------------------------------------
 echo  [3/5] Upgrading pip...
 python -m pip install --upgrade pip -q
 echo  [OK] pip up to date
 
-:: ── Install requirements ──────────────────────────────────────────────────────
+:: -- Install requirements ------------------------------------------------------
 echo  [4/5] Installing requirements...
 echo.
 cd /d "%~dp0"
 
-python -m pip install -e . -q
+:: Step 1: Install streamlit directly (always required, always first)
+echo  Installing streamlit...
+python -m pip install "streamlit>=1.32.0" -q
 if %errorlevel% neq 0 (
-    echo  [WARN] editable install had issues — trying requirements.txt directly...
-    python -m pip install -r requirements.txt -q
-    if %errorlevel% neq 0 (
-        echo  [ERROR] Could not install requirements. Check your internet connection.
-        pause
-        exit /b 1
-    )
+    echo  [ERROR] Could not install streamlit.
+    echo  Check your internet connection and try again.
+    pause
+    exit /b 1
+)
+echo  [OK] Streamlit installed
+
+:: Step 2: Try editable install (makes 'cursiv_v215' importable system-wide)
+:: This is optional -- app.py adds the repo root to sys.path automatically.
+echo  Registering package (optional)...
+python -m pip install -e . -q >nul 2>&1
+if %errorlevel% equ 0 (
+    echo  [OK] Package registered
+) else (
+    echo  [INFO] Package registration skipped ^(app will still work^)
 )
 
-:: Install streamlit explicitly in case pyproject.toml install missed it
-python -m pip install streamlit -q
 echo  [OK] All requirements installed
 
-:: ── Check Ollama (optional, non-blocking) ────────────────────────────────────
+:: -- Check Ollama (optional, non-blocking) -------------------------------------
 echo.
 echo  [5/5] Checking optional services...
 where ollama >nul 2>&1
 if %errorlevel% equ 0 (
-    echo  [OK] Ollama found — local sovereign LLM available
+    echo  [OK] Ollama found -- local sovereign LLM available
 ) else (
-    echo  [INFO] Ollama not found — will use xAI/OpenAI/embedded fallback
-    echo         To enable local sovereign mode: https://ollama.com/download
+    echo  [INFO] Ollama not found -- will use xAI/OpenAI/embedded fallback
+    echo         Install for local mode: https://ollama.com/download
 )
 
-:: Check for API keys in environment
 if defined XAI_API_KEY (
     echo  [OK] XAI_API_KEY detected
 ) else (
-    echo  [INFO] XAI_API_KEY not set — xAI Grok unavailable
+    echo  [INFO] XAI_API_KEY not set -- xAI Grok unavailable
 )
 if defined OPENAI_API_KEY (
     echo  [OK] OPENAI_API_KEY detected
 ) else (
-    echo  [INFO] OPENAI_API_KEY not set — OpenAI unavailable
+    echo  [INFO] OPENAI_API_KEY not set -- OpenAI unavailable
 )
 echo  [OK] Embedded symbolic fallback always available ^(no API needed^)
 
-:: ── Launch ────────────────────────────────────────────────────────────────────
+:: -- Launch --------------------------------------------------------------------
 echo.
-echo  ════════════════════════════════════════════════
+echo  ================================================
 echo  Setup complete. Launching the Sacred UI...
-echo  ════════════════════════════════════════════════
+echo  ================================================
 echo.
 echo  Opening at: http://localhost:8501
 echo  Press Ctrl+C in this window to stop the server.
