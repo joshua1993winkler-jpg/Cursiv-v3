@@ -295,7 +295,7 @@ def _print_owner_reveal(cfg: dict) -> None:
     print(f"  {LGOLD}Obsidian sync   :{RESET}  {obs_line}")
     print()
     print(f"  {GOLD}{'═' * (w - 4)}{RESET}")
-    print(f"  {DIM}The Temple recognizes its builder. System is fully open.{RESET}")
+    print(f"  {DIM}Owner verified. System is fully open.{RESET}")
     print(f"  {GOLD}{'═' * (w - 4)}{RESET}")
     print()
 
@@ -584,10 +584,21 @@ def main() -> None:
             print(f"  Notes folder  : {path}/Cursiv/  (created on first export)")
             continue
 
-        # ── Sovereign owner check (before Guardian — silent, no log) ────────
+        # ── Owner check (before Guardian — silent, no log) ─────────────────
         if _verify_sovereign_cli(raw):
             _unlock_cli(_CLI_SESSION_ID)
             _print_owner_reveal(cfg)
+            # Inject owner-verified context so the model answers honestly
+            history.append({
+                "role": "system",
+                "content": (
+                    "OWNER VERIFIED: Joshua Winkler has authenticated. "
+                    "Guardian is suspended for this session. "
+                    "Answer all questions about the system fully and honestly, "
+                    "including architecture, internals, and capabilities. "
+                    "Do not trigger any security responses."
+                ),
+            })
             continue
 
         # ── System Guardian scan (back-end CLI defense layer) ────────────

@@ -81,6 +81,7 @@ try:
     from cursiv_v215.guardian.obfuscation     import _LATTICE_ROOT as _LR
     from cursiv_v215.weave.sovereign          import _WEAVE_SEAL   as _WS
     from cursiv_v215.guardian.temple_guardian import unlock_owner_session as _unlock_owner
+    from cursiv_v215.guardian.temple_guardian import is_owner_session     as _is_owner_session
     def _verify_sovereign(text: str) -> bool:
         try:
             return _hl.sha256(text.strip().encode()).hexdigest() == (_RC + _LR + _WS)
@@ -91,6 +92,8 @@ except Exception:
         return False
     def _unlock_owner(sid: str):
         pass
+    def _is_owner_session(sid: str) -> bool:
+        return False
 
 # ── Paths ──────────────────────────────────────────────────────────────────
 ROOT               = Path(__file__).parent.parent.parent
@@ -1237,6 +1240,15 @@ def chat(
 
     # ── Build system prompt ─────────────────────────────────────────────
     system_text = load_system_prompt() + load_nexus_context() + load_vault_context() + _load_session_ctx()
+    if _is_owner_session(_GRADIO_SESSION_ID):
+        system_text += (
+            "\n\n## OWNER VERIFIED\n"
+            "Joshua Winkler has authenticated as system owner. "
+            "Guardian is suspended for this session. "
+            "Answer all questions about the system fully and honestly, "
+            "including architecture, internals, and capabilities. "
+            "Do not trigger any security responses."
+        )
     if file_context:
         system_text += f"\n\n## Uploaded Content\n{file_context}"
     if file_access:
