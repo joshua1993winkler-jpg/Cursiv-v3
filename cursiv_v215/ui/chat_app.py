@@ -233,6 +233,16 @@ FILE_TOOLS = [
     },
 ]
 
+# Anthropic tool format (same tools, different schema wrapper)
+CLAUDE_TOOLS = [
+    {
+        "name":         t["function"]["name"],
+        "description":  t["function"]["description"],
+        "input_schema": t["function"]["parameters"],
+    }
+    for t in FILE_TOOLS
+]
+
 
 # ── Tool execution engine ──────────────────────────────────────────────────
 
@@ -975,6 +985,102 @@ def _generate_with_claude(
         return ""
 
 
+def _call_claude_with_tools(
+    messages: list[dict],
+    anthropic_key: str,
+    root: Path,
+    confirm_writes: bool = False,
+    max_tokens: int = 4000,
+    max_loops: int = 20,
+) -> Generator[str, None, None]:
+    """
+    Agentic file-access loop using Claude's native tool-calling API.
+    Claude adopts the Cursiv persona reliably; Grok rejects it.
+    """
+    sys_parts  = [m["content"] for m in messages if m["role"] == "system"]
+    system_str = "\n\n".join(sys_parts)
+    loop_msgs  = [m for m in messages if m["role"] != "system"]
+
+    for _ in range(max_loops):
+        payload = json.dumps({
+            "model":      ANTHROPIC_CODE_MODEL,
+            "max_tokens": max_tokens,
+            "system":     system_str,
+            "tools":      CLAUDE_TOOLS,
+            "messages":   loop_msgs,
+        }).encode()
+        try:
+            req = urllib.request.Request(
+                ANTHROPIC_URL, data=payload,
+                headers={
+                    "content-type":      "application/json",
+                    "x-api-key":         anthropic_key,
+                    "anthropic-version": ANTHROPIC_VERSION,
+                },
+            )
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                data = json.loads(resp.read().decode())
+        except urllib.error.HTTPError as e:
+            yield f"\n[Claude error {e.code}: {e.read().decode(errors='ignore')[:200]}]"
+            return
+        except Exception as e:
+            yield f"\n[Claude error: {e}]"
+            return
+
+        stop_reason    = data.get("stop_reason", "end_turn")
+        content_blocks = data.get("content", [])
+
+        text_parts = []
+        tool_calls = []
+        for block in content_blocks:
+            if block.get("type") == "text":
+                text_parts.append(block.get("text", ""))
+            elif block.get("type") == "tool_use":
+                tool_calls.append(block)
+
+        if text_parts:
+            for word in " ".join(text_parts).split(" "):
+                yield word + " "
+
+        if stop_reason == "end_turn" or not tool_calls:
+            return
+
+        loop_msgs.append({"role": "assistant", "content": content_blocks})
+
+        tool_results = []
+        for tc in tool_calls:
+            fn_name = tc["name"]
+            fn_args = tc.get("input", {})
+            tc_id   = tc["id"]
+
+            arg_preview = ", ".join(f"{k}={repr(v)[:40]}" for k, v in fn_args.items())
+            yield f"\n*`[{fn_name}({arg_preview})]`*\n"
+
+            if fn_name == "write_file" and confirm_writes:
+                path_arg    = fn_args.get("path", "")
+                content_arg = fn_args.get("content", "")
+                preview     = content_arg[:600] + ("..." if len(content_arg) > 600 else "")
+                yield (
+                    f"\n**Write requested:** `{path_arg}`\n"
+                    f"```\n{preview}\n```\n"
+                    f"*Waiting for approval…*\n"
+                )
+                yield WRITE_SENTINEL + json.dumps({"path": path_arg, "content": content_arg})
+                return
+
+            result = execute_tool(fn_name, fn_args, root)
+            yield f"```\n{result[:600]}\n```\n"
+            tool_results.append({
+                "type":        "tool_result",
+                "tool_use_id": tc_id,
+                "content":     result,
+            })
+
+        loop_msgs.append({"role": "user", "content": tool_results})
+
+    yield "\n[Max tool iterations reached — stopping.]"
+
+
 def _call_xai_with_tools(
     messages: list[dict],
     api_key: str,
@@ -987,8 +1093,8 @@ def _call_xai_with_tools(
     anthropic_key: str = "",
 ) -> Generator[str, None, None]:
     """
-    Agentic file-access loop.
-    Calls xAI with FILE_TOOLS; executes tool calls locally; loops until done.
+    Agentic file-access loop using xAI/Grok.
+    Used as fallback when no Anthropic key is available.
     Code generation priority on write_file: Claude (Anthropic) > OpenAI > none.
     Yields strings — tool events formatted inline, then the final response.
     """
@@ -1288,8 +1394,16 @@ You are in full autonomous coding mode. Follow this protocol exactly:
     has_images = len(image_parts) > 0
     msg_type   = _classify_message(user_text)
 
-    if key and file_access:
-        # Tool-use loop always runs on Grok — Claude/GPT handle write_file generation inside
+    if file_access and ant:
+        # Claude tool-use loop — adopts Cursiv persona, has native tool-calling
+        workspace = (
+            Path(root_path.strip()).expanduser().resolve()
+            if root_path.strip() else ROOT
+        )
+        yield from _call_claude_with_tools(messages, ant, workspace,
+                                            confirm_writes=confirm_writes)
+    elif file_access and key:
+        # Grok tool-use fallback — only when no Anthropic key
         workspace = (
             Path(root_path.strip()).expanduser().resolve()
             if root_path.strip() else ROOT
@@ -1297,7 +1411,7 @@ You are in full autonomous coding mode. Follow this protocol exactly:
         yield from _call_xai_with_tools(messages, key, workspace, oai, has_images,
                                          confirm_writes=confirm_writes, anthropic_key=ant)
     elif ant:
-        # Claude preferred for all conversation — adopts Cursiv persona reliably
+        # Claude for all conversation — adopts Cursiv persona reliably
         yield from _call_claude_direct(messages, ant)
     elif oai:
         # GPT-4.1 second choice — also adopts personas correctly
