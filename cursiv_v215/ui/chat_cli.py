@@ -1,5 +1,5 @@
 """
-JWFrontierEvoCore — Terminal Chat
+Cursiv — Terminal Chat
 Cursiv-v2.1.5
 
 Run:  python -m cursiv_v215.ui.chat_cli
@@ -93,7 +93,7 @@ except Exception:
     def _session_append_cli(u, a, m="unknown"): pass
     def _session_boot_summary():                return {}
 
-# ── Temple Guardian — back-end CLI defense layer ────────────────────────────
+# ── System Guardian — back-end CLI defense layer ────────────────────────────
 try:
     from cursiv_v215.guardian.temple_guardian import scan_cli as _guardian_scan_cli
     from cursiv_v215.guardian.obfuscation import session_fingerprint as _sfp
@@ -197,7 +197,7 @@ def _print_header(cfg: dict) -> None:
               else f"{DIM}Obsidian:OFF{RESET}")
     status = (f"  {xai_s}  {oai_s}  {ant_s}  {fa_s}  "
               f"mode:{mode_s}  {grd_s}  {obs_s}  {DIM}'help'{RESET}")
-    print(_top(w, "JWFrontierEvoCore"))
+    print(_top(w, "Cursiv v3.0"))
     print(_row(status, w))
     print(_bot(w))
     print()
@@ -275,8 +275,8 @@ def _print_owner_reveal(cfg: dict) -> None:
 
     print()
     print(f"  {GOLD}{BOLD}{'═' * (w - 4)}{RESET}")
-    print(f"  {GOLD}{BOLD}  SOVEREIGN OWNER VERIFIED  --  GUARDIAN SUSPENDED{RESET}")
-    print(f"  {GOLD}{BOLD}  Joshua Winkler  --  Permanent Central Leader{RESET}")
+    print(f"  {GOLD}{BOLD}  OWNER VERIFIED  --  GUARDIAN SUSPENDED{RESET}")
+    print(f"  {GOLD}{BOLD}  Joshua Winkler  --  System Owner{RESET}")
     print(f"  {GOLD}{'═' * (w - 4)}{RESET}")
     print()
     print(f"  {LGOLD}Session ID      :{RESET}  {_CLI_SESSION_ID}")
@@ -590,7 +590,7 @@ def main() -> None:
             _print_owner_reveal(cfg)
             continue
 
-        # ── Temple Guardian scan (back-end CLI defense layer) ────────────
+        # ── System Guardian scan (back-end CLI defense layer) ────────────
         if _CLI_GUARDIAN_OK:
             _trig, _skull_ansi = _guardian_scan_cli(raw, _CLI_SESSION_ID)
             if _trig:

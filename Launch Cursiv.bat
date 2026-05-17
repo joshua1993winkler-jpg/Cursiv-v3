@@ -7,8 +7,8 @@ if exist "%~dp0secrets.bat" call "%~dp0secrets.bat"
 
 echo.
 echo  ========================================================
-echo   CURSIV v3.0 - THE SOVEREIGN TEMPLE
-echo   JWFrontierEvoCore  ^|  Sacred UI
+echo   CURSIV v3.0
+echo   Sacred UI
 echo  ========================================================
 echo.
 echo  Checking environment...

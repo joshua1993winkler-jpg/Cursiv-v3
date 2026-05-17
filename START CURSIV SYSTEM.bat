@@ -1,12 +1,12 @@
 @echo off
 setlocal enabledelayedexpansion
-title JWFrontierEvoCore -- Full System Boot
+title Cursiv v3.0 -- Full System Boot
 color 07
 cd /d "%~dp0"
 
 echo.
 echo  ================================================================
-echo   JWFrontierEvoCore v3.0
+echo   Cursiv v3.0
 echo   FULL SYSTEM BOOT  ^|  Staggered Launcher
 echo  ================================================================
 echo.

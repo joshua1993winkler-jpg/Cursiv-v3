@@ -2,7 +2,7 @@
 Sovereign Systems Manager — higher-order system composition.
 
 Manages relationships between agents, creates agent networks,
-and enforces the Permanent Central Leader invariant across all compositions.
+and enforces the system owner invariant across all compositions.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..core.agent import CursivAgent
-from ..core.constitution import PERMANENT_CENTRAL_LEADER, get_constitution
+from ..core.constitution import SYSTEM_OWNER, get_constitution
 from ..dugout.vault import AgentVault
 
 _WEAVE_SEAL = "0d7f1c208104d1be59fac3"
@@ -22,7 +22,7 @@ _WEAVE_SEAL = "0d7f1c208104d1be59fac3"
 @dataclass
 class SovereignSystem:
     name: str
-    leader: str = PERMANENT_CENTRAL_LEADER
+    leader: str = SYSTEM_OWNER
     agent_ids: list[str] = field(default_factory=list)
     relationships: list[dict[str, str]] = field(default_factory=list)
     constitution_hash: str = ""
@@ -35,7 +35,7 @@ class SovereignSystem:
             self.relationships.append({"agent": agent_id, "role": role, "leader": self.leader})
 
     def verify_leader(self) -> bool:
-        return self.leader == PERMANENT_CENTRAL_LEADER
+        return self.leader == SYSTEM_OWNER
 
 
 class SovereignManager:
@@ -45,10 +45,10 @@ class SovereignManager:
         self._systems: dict[str, SovereignSystem] = {}
 
     def create_system(self, name: str) -> SovereignSystem:
-        """Create a new sovereign agent system under the Permanent Central Leader."""
+        """Create a new agent system under the system owner."""
         system = SovereignSystem(
             name=name,
-            leader=PERMANENT_CENTRAL_LEADER,
+            leader=SYSTEM_OWNER,
             constitution_hash=self._constitution.hash,
         )
         self._systems[name] = system

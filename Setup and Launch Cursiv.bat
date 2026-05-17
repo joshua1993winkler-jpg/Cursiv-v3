@@ -8,7 +8,7 @@ cd /d "%~dp0"
 echo.
 echo  +-----------------------------------------------+
 echo  ^|     CURSIV v3.0 -- SETUP ^& LAUNCH            ^|
-echo  ^|     JWFrontierEvoCore  ^|  Full Stack          ^|
+echo  ^|     Cursiv v3.0  ^|  Full Stack                 ^|
 echo  +-----------------------------------------------+
 echo.
 

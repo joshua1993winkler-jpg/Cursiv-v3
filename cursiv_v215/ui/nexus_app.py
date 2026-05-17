@@ -145,8 +145,8 @@ def nexus_status() -> str:
     lines = [
         "```",
         "╔══════════════════════════════════════════════════════════════════╗",
-        "║  JW COMMAND NEXUS — JWFrontierEvoCore v3.0                       ║",
-       f"║  Leader: Joshua Winkler (PCL) ✓   {now}                ║",
+        "║  JW COMMAND NEXUS — Cursiv v3.0                                  ║",
+       f"║  Owner: Joshua Winkler ✓   {now}                       ║",
         "╠══════════════════════════════════════════════════════════════════╣",
         "║  EvoCore: Natural Flow ● Proactive Evol ● Boundary ● Reflect ● ║",
         "╠══════════════════════════════════════════════════════════════════╣",
@@ -389,8 +389,8 @@ def build_app() -> gr.Blocks:
 
         gr.Markdown(
             "# ⬡ JW COMMAND NEXUS\n"
-            "**JWFrontierEvoCore v3.0** · "
-            "Leader: Joshua Winkler (PCL) · Port 7861"
+            "**Cursiv v3.0** · "
+            "Owner: Joshua Winkler · Port 7861"
         )
 
         with gr.Tabs():

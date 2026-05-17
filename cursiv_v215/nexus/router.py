@@ -1,6 +1,6 @@
-# ==================== JW COMMAND NEXUS v1.1 ====================
-# Decal-style command router for JWFrontierEvoCore
-# Cursiv-v2.1.5 | C:\Users\joshu\OneDrive\Documents\GitHub\Cursiv-v2.1.5
+# ==================== JW COMMAND NEXUS v3.0 ====================
+# Decal-style command router for Cursiv
+# Cursiv v3.0 | C:\Users\joshu\OneDrive\Documents\GitHub\Cursiv-v2.1.5
 
 from __future__ import annotations
 
@@ -82,7 +82,7 @@ def render_status_tab() -> str:
     return """
 NEXUS — STATUS
 ──────────────────────────────────────────────
-JWFrontierEvoCore v1.0  |  Cursiv-v2.1.5
+Cursiv v3.0
 Status      : RUNNING
 Drift       : 0.0%
 Constitution: VERIFIED

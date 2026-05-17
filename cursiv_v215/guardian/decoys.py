@@ -5,7 +5,7 @@ Three isolated fake agents (Meridian, Veil, Cipher) that appear to be council
 members but are completely disconnected from the real 14-agent council and from
 all user workflows.
 
-Activation: ONLY when the Temple Guardian detects a probing/decoding session.
+Activation: ONLY when the System Guardian detects a probing/decoding session.
 Purpose: feed plausible-sounding but deliberately misleading technical responses
 to would-be attackers, wasting their time and misdirecting their reverse-engineering.
 

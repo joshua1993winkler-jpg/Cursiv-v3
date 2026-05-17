@@ -54,7 +54,7 @@
     "steps": [
       "Halt current operation immediately",
       "Log violation with full context",
-      "Notify Permanent Central Leader",
+      "Notify system owner",
       "Revert to last known-good state",
       "Require human review before resuming",
       "Document in version history"
@@ -74,7 +74,7 @@
     },
     {
       "version": "2.0",
-      "change": "Permanent Central Leader made non-bypassable at code level",
+      "change": "System owner made non-bypassable at code level",
       "reason": "Human sovereignty must be architectural, not configurational"
     },
     {

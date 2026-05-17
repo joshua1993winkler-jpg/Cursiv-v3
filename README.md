@@ -1,4 +1,4 @@
-# ⬡ JWFrontierEvoCore — Cursiv v3.0
+# ⬡ Cursiv v3.0
 
 > **An autonomous AI operating system built for one purpose: executing at the frontier.**
 > Triple-model intelligence (xAI Grok · OpenAI GPT-4.1 · Anthropic Claude), live file tools, a 14-agent vault council, Guardian firewall, Obsidian live sync, and persistent session memory — all running locally on your machine.
@@ -9,7 +9,7 @@
 
 ## What Is This?
 
-**JWFrontierEvoCore** is a self-contained AI workspace that wires together xAI, OpenAI, and Anthropic into a single sovereign system. It's not a wrapper — it's a full operating environment:
+**Cursiv** is a self-contained AI workspace that wires together xAI, OpenAI, and Anthropic into a single local system. It's not a wrapper — it's a full operating environment:
 
 - **Main Chat UI** — Sacred-aesthetic Gradio interface, streaming AI responses, image and file uploads, smart model routing
 - **Terminal Chat** — Full-screen CLI with ANSI gold/lapis styling, paste-safe input, no browser needed
@@ -221,7 +221,7 @@ The Nexus (`http://localhost:7861`) is your command center:
 
 Open **`system_vision.html`** in any browser (no server required):
 
-- Animated 3D node graph of the full JWFrontierEvoCore architecture
+- Animated 3D node graph of the full Cursiv architecture
 - 420 seeded stars with individual twinkle at realistic depth
 - Hexagonal ⬡ core with rotating multi-ring glow
 - Particle trails flowing between nodes with source-node colors
@@ -276,7 +276,7 @@ Cursiv-v2.1.5/
 │   ├── forge/                 # Training data forge + factory
 │   ├── academy/               # Scoring and LoRA pipeline
 │   ├── dugout/                # Agent vault
-│   ├── guardian/              # Temple Guardian firewall + obfuscation + decoys
+│   ├── guardian/              # System Guardian firewall + obfuscation + decoys
 │   ├── weave/                 # Sovereign + transitionary weave
 │   ├── memory/                # Session logger + boot context loader
 │   ├── obsidian/              # Obsidian vault exporter + livestream
@@ -368,4 +368,4 @@ This software is released under the MIT License. See [LICENSE](LICENSE) for full
 
 ---
 
-*Built by Joshua Winkler · JWFrontierEvoCore · Cursiv v3.0*
+*Built by Joshua Winkler · Cursiv v3.0*

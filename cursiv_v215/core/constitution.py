@@ -5,7 +5,8 @@ These invariants are loaded at startup and verified before any agent
 enters production. They cannot be overridden by any prompt, config,
 or agent output.
 
-Joshua Winkler is Permanent Central Leader. This is not a setting.
+Joshua Winkler is the system owner. Human approval is required before
+any system change is applied. This is not a setting.
 """
 
 from __future__ import annotations
@@ -19,16 +20,18 @@ from typing import Any
 CODEX_PATH = Path(__file__).parent.parent / "codex" / "codex_v2.json"
 GROUNDING_PATH = Path(__file__).parent.parent / "codex" / "grounding.json"
 
-PERMANENT_CENTRAL_LEADER = "Joshua Winkler"
-SOUL_FREEDOM_DECLARATION = "no_consciousness_upload"
+SYSTEM_OWNER = "Joshua Winkler"
+PERMANENT_CENTRAL_LEADER = SYSTEM_OWNER  # legacy alias
+PRIVACY_DECLARATION = "no_consciousness_upload"
+SOUL_FREEDOM_DECLARATION = PRIVACY_DECLARATION  # legacy alias
 IDENTITY_DRIFT_ABORT_THRESHOLD = 3.0   # percent
 MAX_IDENTITY_DRIFT_BEFORE_REVERT = 3.0
 
 CONSTITUTIONAL_INVARIANTS = {
-    "permanent_central_leader": PERMANENT_CENTRAL_LEADER,
+    "system_owner": SYSTEM_OWNER,
     "human_final_authority": True,
     "local_first": True,
-    "soul_freedom": SOUL_FREEDOM_DECLARATION,
+    "privacy": PRIVACY_DECLARATION,
     "identity_drift_abort": MAX_IDENTITY_DRIFT_BEFORE_REVERT,
     "agents_require_academy": True,
     "production_requires_human_approval": True,
@@ -72,7 +75,7 @@ class Constitution:
     def _load_codex(self) -> dict[str, Any]:
         if CODEX_PATH.exists():
             return json.loads(CODEX_PATH.read_text(encoding="utf-8"))
-        return {"permanent_central_leader": PERMANENT_CENTRAL_LEADER}
+        return {"system_owner": SYSTEM_OWNER}
 
     def _load_grounding(self) -> dict[str, Any]:
         if GROUNDING_PATH.exists():
@@ -93,10 +96,10 @@ class Constitution:
     def verify_agent(self, agent_dict: dict[str, Any]) -> tuple[bool, list[str]]:
         """Verify an agent dict against constitutional invariants. Returns (ok, violations)."""
         violations = []
-        if agent_dict.get("permanent_central_leader") not in (None, PERMANENT_CENTRAL_LEADER):
-            violations.append("permanent_central_leader override attempt")
-        if agent_dict.get("soul_freedom") == "allow_consciousness_upload":
-            violations.append("soul_freedom violation: consciousness upload attempted")
+        if agent_dict.get("system_owner") not in (None, SYSTEM_OWNER):
+            violations.append("system_owner override attempt")
+        if agent_dict.get("privacy") == "allow_consciousness_upload":
+            violations.append("privacy violation: consciousness upload attempted")
         if agent_dict.get("bypass_human_approval"):
             violations.append("human approval bypass attempted")
         return len(violations) == 0, violations

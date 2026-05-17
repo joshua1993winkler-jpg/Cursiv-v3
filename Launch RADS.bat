@@ -6,7 +6,7 @@ cd /d "%~dp0"
 echo.
 echo  =====================================================
 echo   RADS -- Rogue Autonomous Defense System
-echo   JWFrontierEvoCore Swarm Controller
+echo   Cursiv Swarm Controller
 echo  =====================================================
 echo.
 

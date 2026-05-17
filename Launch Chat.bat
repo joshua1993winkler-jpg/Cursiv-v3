@@ -1,5 +1,5 @@
 @echo off
-title JW Main Chat - JWFrontierEvoCore v3.0
+title JW Main Chat - Cursiv v3.0
 color 07
 cd /d "%~dp0"
 
@@ -15,7 +15,7 @@ if %errorlevel% neq 0 (
 
 echo.
 echo  ========================================================
-echo   JW MAIN CHAT - JWFrontierEvoCore v3.0
+echo   JW MAIN CHAT - Cursiv v3.0
 echo   Cursiv v3.0  ^|  http://localhost:7860
 echo  ========================================================
 echo.

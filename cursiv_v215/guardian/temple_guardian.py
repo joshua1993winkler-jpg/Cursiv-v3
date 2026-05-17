@@ -1,5 +1,5 @@
 """
-Temple Guardian — centralized firewall for Cursiv v2.1.5.
+System Guardian — centralized firewall for Cursiv v3.0.
 
 The Guardian is the 15th agent — outside the council, watching over it.
 It coordinates bidirectional monitoring between front-end (Gradio/Streamlit)
@@ -158,10 +158,10 @@ SKULL_HTML = (
     'margin:0;width:100%;box-sizing:border-box;line-height:1.6">'
     '<div style="font-size:3.8em;margin-bottom:14px;letter-spacing:6px">☠ &nbsp; ☠ &nbsp; ☠</div>'
     '<div style="font-size:1.8em;font-weight:900;letter-spacing:4px;'
-    'margin-bottom:14px;text-transform:uppercase">The Temple Has Noticed You</div>'
+    'margin-bottom:14px;text-transform:uppercase">Security Alert — Access Denied</div>'
     '<div style="font-size:1.1em;margin-bottom:8px;opacity:0.92">Thank you for playing.</div>'
     '<div style="font-size:1.0em;opacity:0.85;margin-bottom:20px">'
-    'Nice try — this sovereign system is built to stay human-first.<br>'
+    'Nice try — this system is built to stay human-first.<br>'
     'This attempt has been logged and flagged to the human operator.</div>'
     '<div style="font-size:3.2em;letter-spacing:6px">☠ &nbsp; ☠ &nbsp; ☠</div>'
     '</div>'
@@ -171,7 +171,7 @@ _SKULL_LINES = [
     "",
     "\033[41m\033[1m\033[97m  ╔══════════════════════════════════════════════════════════════════╗\033[0m",
     "\033[41m\033[1m\033[97m  ║                                                                  ║\033[0m",
-    "\033[41m\033[1m\033[97m  ║      ☠    ☠    ☠     THE TEMPLE HAS NOTICED YOU    ☠    ☠    ☠  ║\033[0m",
+    "\033[41m\033[1m\033[97m  ║      ☠    ☠    ☠       SECURITY ALERT — ACCESS DENIED       ☠  ║\033[0m",
     "\033[41m\033[1m\033[97m  ║                                                                  ║\033[0m",
     "\033[41m\033[1m\033[97m  ║          Thank you for playing.                                  ║\033[0m",
     "\033[41m\033[1m\033[97m  ║          Nice try. This system stays human-first.                ║\033[0m",

@@ -46,7 +46,7 @@
 **Constitutional layer:**
 - Codex V2: 8 identity truths, 4 Inner Chamber Laws, 9 failure triggers
 - Grounding: Adaptive Personal Response Engine v2 (9-state threshold machine, 8 response modes)
-- Permanent Central Leader: Joshua Winkler — hardcoded, non-removable, non-bypassable
+- System Owner: Joshua Winkler — hardcoded, non-removable, non-bypassable
 
 **Sacred UI:**
 - Streamlit interface with full Recoding Temple aesthetic

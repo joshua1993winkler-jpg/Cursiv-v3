@@ -35,7 +35,7 @@ def _print_banner() -> None:
   ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝ ╚══════╝
 
   Rogue Autonomous Defense System
-  JWFrontierEvoCore Swarm Controller
+  Cursiv Swarm Controller
   ──────────────────────────────────
 """)
 

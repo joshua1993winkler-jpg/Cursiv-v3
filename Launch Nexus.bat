@@ -1,5 +1,5 @@
 @echo off
-title JW Command Nexus - JWFrontierEvoCore v3.0
+title JW Command Nexus - Cursiv v3.0
 color 07
 cd /d "%~dp0"
 
@@ -15,7 +15,7 @@ if %errorlevel% neq 0 (
 
 echo.
 echo  ========================================================
-echo   JW COMMAND NEXUS - JWFrontierEvoCore v3.0
+echo   JW COMMAND NEXUS - Cursiv v3.0
 echo   Cursiv v3.0  ^|  http://localhost:7861
 echo  ========================================================
 echo.

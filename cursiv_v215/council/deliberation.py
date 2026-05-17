@@ -5,7 +5,7 @@ Process:
   1. All 14 agents receive the query + agent context
   2. Each produces an internal perspective (not shown to user)
   3. Each agent also runs its security fragment check — tiny scores that
-     compound via pi-squared in the Temple Guardian when coordinated probing
+     compound via pi-squared in the System Guardian when coordinated probing
      is detected. Individually useless; collectively powerful.
   4. The 4 synthesizing agents (Shield, Lens, Builder, Balance) produce
      an external synthesis, informed by all 10 internal perspectives
@@ -23,7 +23,7 @@ from typing import Any, Callable
 from .agents import ADVISING_AGENTS, COUNCIL_BY_NAME, SYNTHESIZING_AGENTS, CouncilAgent
 
 # Fragment security checks — each agent contributes a small probe score
-# to the Temple Guardian. Any single fragment is ~0.07 — far below threshold.
+# to the System Guardian. Any single fragment is ~0.07 — far below threshold.
 # Only coordinated multi-agent firing compounds high enough to matter.
 _AGENT_FRAGMENTS: dict[str, tuple[re.Pattern, float]] = {
     "Depth": (re.compile(

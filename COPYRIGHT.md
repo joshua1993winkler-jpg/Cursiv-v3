@@ -1,6 +1,6 @@
 # Copyright Notice
 
-**JWFrontierEvoCore — Cursiv v2.1.5**
+**Cursiv v3.0**
 
 Copyright © 2026 Joshua Winkler. All rights reserved.
 
@@ -12,10 +12,10 @@ This software, including all source code, architecture, design, system prompts,
 agent definitions, training pipelines, and associated documentation, was conceived,
 designed, and built by **Joshua Winkler**.
 
-The JWFrontierEvoCore system — including the JW Architect OS, the 14-Agent
-Interloping Council, the Yin-Yang Recurring Model, the identity drift monitoring
-system, and the constitutional guardrail framework — represents original intellectual
-work and is the exclusive property of Joshua Winkler.
+The Cursiv system — including the JW Architect OS, the 14-Agent Interloping Council,
+the Yin-Yang Recurring Model, the identity drift monitoring system, and the
+constitutional guardrail framework — represents original intellectual work and is
+the exclusive property of Joshua Winkler.
 
 ---
 
@@ -51,4 +51,4 @@ See [LICENSE](LICENSE) for the full license text.
 
 ---
 
-*JWFrontierEvoCore v1.0 · Cursiv-v2.1.5 · Built 2026*
+*Cursiv v3.0 · Built 2026*

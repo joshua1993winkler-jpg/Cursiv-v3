@@ -1,2 +1,2 @@
 # RADS — Rogue Autonomous Defense System
-# JWFrontierEvoCore swarm controller for ACEmulator
+# Cursiv RADS swarm controller for ACEmulator

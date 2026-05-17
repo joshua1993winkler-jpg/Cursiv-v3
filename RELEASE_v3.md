@@ -1,12 +1,12 @@
-# ⬡ JWFrontierEvoCore — Cursiv v3.0 Release
+# ⬡ Cursiv v3.0 Release
 
 > *"From the Dust, We Shape the Stars."*
 
 ---
 
-## What Is JWFrontierEvoCore?
+## What Is Cursiv?
 
-JWFrontierEvoCore is a self-contained autonomous AI operating system that runs entirely on your local machine. It's not a chatbot wrapper, a prompt template, or a no-code dashboard. It's a living framework — a full sovereign AI workspace with its own defense layer, agent council, memory system, and the ability to read, write, and evolve its own files.
+Cursiv is a self-contained autonomous AI operating system that runs entirely on your local machine. It's not a chatbot wrapper, a prompt template, or a no-code dashboard. It's a living framework — a full local AI workspace with its own defense layer, agent council, memory system, and the ability to read, write, and evolve its own files.
 
 You talk to it. It builds. You test it. It improves. You pass it on.
 
@@ -46,7 +46,7 @@ Fourteen living agents seeded across the JW Architect phase cycle are loaded int
 
 ### System Visualization
 `system_vision.html` — open in any browser, no server required:
-- Full 3D animated node graph of the JWFrontierEvoCore architecture
+- Full 3D animated node graph of the Cursiv architecture
 - 420 seeded stars with depth-based twinkling
 - Hexagonal ⬡ core with rotating multi-ring glow
 - Particle trails with source-node colors flowing between live agents
@@ -124,7 +124,7 @@ Browser tabs open automatically.
 
 ```
 ┌─────────────────────────────────────────────────┐
-│              JWFrontierEvoCore v3.0              │
+│                   Cursiv v3.0                   │
 ├──────────────┬──────────────┬───────────────────┤
 │  Gradio Chat │  Nexus Panel │  Terminal Chat    │
 │  port 7860   │  port 7861   │  full-screen CLI  │

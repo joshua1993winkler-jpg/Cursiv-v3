@@ -1,5 +1,5 @@
 """
-JW Main Chat — JWFrontierEvoCore Interactive Interface
+Cursiv — Main Chat Interface
 Cursiv-v2.1.5 | http://localhost:7860
 
 Black screen, rolling text, multimodal input (images, JSON, text, raw files).
@@ -21,7 +21,7 @@ from typing import Generator
 
 import gradio as gr
 
-# ── Temple Guardian — front-end defense layer ──────────────────────────────
+# ── System Guardian — front-end defense layer ──────────────────────────────
 try:
     from cursiv_v215.guardian.temple_guardian import (
         scan as _guardian_scan,
@@ -549,9 +549,9 @@ def _build_owner_reveal() -> str:
     if not rows:
         rows = "| *(vault empty)* | — | — | — |\n"
 
-    return f"""## ⬡  SOVEREIGN OWNER VERIFIED
+    return f"""## ⬡  OWNER VERIFIED
 
-**Joshua Winkler — Permanent Central Leader**
+**Joshua Winkler — System Owner**
 Guardian firewall suspended for this session. All system internals visible.
 
 ---
@@ -560,7 +560,7 @@ Guardian firewall suspended for this session. All system internals visible.
 
 | Field | Value |
 |---|---|
-| System | JWFrontierEvoCore v3.0 |
+| System | Cursiv v3.0 |
 | Session ID | `{_GRADIO_SESSION_ID}` |
 | Guardian fingerprint | `{fingerprint}` |
 | Constitution hash | `{const_hash}` |
@@ -608,8 +608,8 @@ def load_system_prompt() -> str:
     if SYSTEM_PROMPT_FILE.exists():
         return SYSTEM_PROMPT_FILE.read_text(encoding="utf-8")
     return (
-        "You are JWFrontierEvoCore — the autonomous executor of the JW Architect OS "
-        "inside Cursiv v3.0. Joshua Winkler is the Permanent Central Leader. "
+        "You are Cursiv — a self-improving AI workspace built for Joshua Winkler. "
+        "Human approval is required before any system change is applied. "
         "Be warm, direct, truthful, and frontier-oriented."
     )
 
@@ -1220,7 +1220,7 @@ def chat(
         yield _build_owner_reveal()
         return
 
-    # ── Temple Guardian scan (front-end defense layer) ──────────────────
+    # ── System Guardian scan (front-end defense layer) ──────────────────
     # Runs BEFORE any API call. If a probe is detected, the skull screen
     # is returned immediately and no API credits are consumed.
     # The only gate this does NOT cover is human phishing / social engineering —
@@ -1332,7 +1332,7 @@ def status_bar(api_key: str, openai_key: str = "", anthropic_key: str = "") -> s
     vc = len(list((ROOT / ".cursiv" / "vault").glob("*"))) if (ROOT / ".cursiv" / "vault").exists() else 0
     tc = sum(1 for _ in open(TRAINING_JSONL, encoding="utf-8")) if TRAINING_JSONL.exists() else 0
     return (
-        f"JWFrontierEvoCore v1.0  ·  {key_status}  ·  {oai_status}  ·  {ant_status}  ·  "
+        f"Cursiv v3.0  ·  {key_status}  ·  {oai_status}  ·  {ant_status}  ·  "
         f"{ollama_ok}  ·  {nexus_ok}  ·  {guardian_s}  ·  "
         f"Vault: {vc} agents  ·  Training: {tc} examples  ·  {datetime.now().strftime('%H:%M')}"
     )
@@ -1385,7 +1385,7 @@ def build_chat_app() -> gr.Blocks:
         font=gr.themes.GoogleFont("EB Garamond"),
     )
 
-    with gr.Blocks(title="JW Main Chat — JWFrontierEvoCore") as app:
+    with gr.Blocks(title="Cursiv v3.0 — Main Chat") as app:
 
         # ── Invisible state components ───────────────────────────────────
         confirm_mode_state  = gr.State(value="confirm")   # "auto" | "confirm"
@@ -1393,8 +1393,8 @@ def build_chat_app() -> gr.Blocks:
 
         # ── Header ──────────────────────────────────────────────────────
         gr.Markdown(
-            "## ⬡ JWFrontierEvoCore — Main Chat\n"
-            "**Cursiv v3.0** · Permanent Central Leader: Joshua Winkler · "
+            "## ⬡ Cursiv v3.0 — Main Chat\n"
+            "**Cursiv v3.0** · Owner: Joshua Winkler · "
             "[Open Nexus →](http://localhost:7861)"
         )
 
@@ -1473,20 +1473,20 @@ def build_chat_app() -> gr.Blocks:
 
         # ── Chat window ──────────────────────────────────────────────────
         chatbot = gr.Chatbot(
-            label="JWFrontierEvoCore",
+            label="Cursiv",
             height=560,
             show_label=False,
             avatar_images=(None, None),
             render_markdown=True,
             layout="panel",
-            placeholder="*JWFrontierEvoCore is standing by. Type a message or drop in a file.*",
+            placeholder="*Cursiv is standing by. Type a message or drop in a file.*",
         )
 
         # ── Input row ────────────────────────────────────────────────────
         with gr.Row():
             msg_box = gr.MultimodalTextbox(
                 placeholder=(
-                    "Talk to JWFrontierEvoCore...  |  "
+                    "Talk to Cursiv...  |  "
                     "Drag in images, JSON, code, raw files, anything"
                 ),
                 show_label=False,

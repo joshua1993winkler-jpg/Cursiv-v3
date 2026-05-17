@@ -1,5 +1,5 @@
 """
-Temple Guardian package — Cursiv v2.1.5 defense layers.
+System Guardian package — Cursiv v3.0 defense layers.
 
 Modules:
   temple_guardian  — centralized Robot Language Filter + pi-squared firewall
