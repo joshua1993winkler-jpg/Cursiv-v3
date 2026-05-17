@@ -1,6 +1,6 @@
 """
 JW Command Nexus — Standalone Gradio Interface
-Cursiv-v2.1.5 | http://localhost:7861
+Cursiv v3.0 | http://localhost:7861
 
 Tabs:
   [Nexus]   — live dashboard, plugin status, Yin-Yang board, task slots
@@ -145,7 +145,7 @@ def nexus_status() -> str:
     lines = [
         "```",
         "╔══════════════════════════════════════════════════════════════════╗",
-        "║  JW COMMAND NEXUS — JWFrontierEvoCore v1.0 :: Cursiv-v2.1.5     ║",
+        "║  JW COMMAND NEXUS — JWFrontierEvoCore v3.0                       ║",
        f"║  Leader: Joshua Winkler (PCL) ✓   {now}                ║",
         "╠══════════════════════════════════════════════════════════════════╣",
         "║  EvoCore: Natural Flow ● Proactive Evol ● Boundary ● Reflect ● ║",
@@ -389,7 +389,7 @@ def build_app() -> gr.Blocks:
 
         gr.Markdown(
             "# ⬡ JW COMMAND NEXUS\n"
-            "**JWFrontierEvoCore v1.0 — Cursiv-v2.1.5** · "
+            "**JWFrontierEvoCore v3.0** · "
             "Leader: Joshua Winkler (PCL) · Port 7861"
         )
 

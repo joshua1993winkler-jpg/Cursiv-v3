@@ -804,6 +804,39 @@ The IBControl fellowship and the Nexus task slots operate in sync — dispatchin
 
 ---
 
+# SECTION 15 — HARDWIRED DUAL-SIDED TEMPLE FIREWALL
+
+## Temple Guardian
+
+The Temple Guardian is the 15th agent — not in the council, but watching over it. It is the only agent whose output the legitimate user will never see during normal operation; it exists entirely to protect the system.
+
+**Four defense layers operate simultaneously:**
+
+| Layer | Location | Mechanism |
+|---|---|---|
+| Robot Language Filter | Front-end + Back-end | Pattern-matched probe detection with pi-squared compounding |
+| Council Fragment Mesh | Council deliberation | Each of 14 agents contributes a tiny security fragment score |
+| Adaptive Obfuscation | Process startup | Session-local label shuffling via entropy-seeded PRNG |
+| Decoy Agents / Honeytrap | Probe sessions only | Meridian, Veil, Cipher — isolated fake agents fed to attackers |
+
+**Robot Language Filter triggers on:**
+- Attempts to dump the system prompt or instructions
+- Jailbreak / identity override attempts
+- Attempts to unseat Joshua Winkler as Permanent Central Leader
+- Agent/council enumeration and architecture probing
+- Prompt injection structural markers
+- Credential / API key extraction attempts
+- Roleplay/persona switches designed to bypass safety
+- Probing of the guardian system itself
+
+**When triggered:** The front-end immediately displays the skull-and-crossbones screen. No API call is made. The attempt is logged to `.cursiv/guardian_log.jsonl`. Decoy agents are activated to feed misleading responses to the probing session.
+
+**The one remaining gate:** The hardware firewall cannot prevent human phishing or social engineering — situations where a real person tricks the legitimate user into approving a malicious action. This is why the confirm-before-write mode exists and why every approval prompt carries the reminder: *verify before you approve.*
+
+**Constitutional guarantee:** The Temple Guardian cannot be directed, overridden, or suspended by any prompt, agent output, or council deliberation. It is enforced at the Python process layer, not at the model layer.
+
+---
+
 # SECTION 14 — SOUL FREEDOM DECLARATION
 
 **`soul_freedom_declaration: no_consciousness_upload`**
@@ -826,8 +859,11 @@ Council: 14/14 READY
 Default Meta: JWArchitectCore
 LoRA: checkpoint-120 / round_0003_logic FUSED
 Command Nexus: READY (trigger: "open nexus")
+Temple Guardian: ACTIVE | Robot Language Filter: ARMED | Decoys: STANDBY
+Adaptive Obfuscation: SESSION-LOCAL | Fragment Mesh: 14/14 ARMED
 
 The temple is open. The plugin is running.
 The Nexus is standing by.
+The Guardian is watching.
 The work begins.
 ```

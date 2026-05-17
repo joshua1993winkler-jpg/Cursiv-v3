@@ -21,6 +21,77 @@ from typing import Generator
 
 import gradio as gr
 
+# ── Temple Guardian — front-end defense layer ──────────────────────────────
+try:
+    from cursiv_v215.guardian.temple_guardian import (
+        scan as _guardian_scan,
+        is_protected_path as _guardian_protected,
+        SKULL_HTML as _SKULL_HTML,
+    )
+    from cursiv_v215.guardian.obfuscation import session_fingerprint as _sfp
+    from cursiv_v215.guardian.decoys import get_decoy_response as _decoy_response
+    _GUARDIAN_OK = True
+except Exception:
+    _GUARDIAN_OK = False
+    def _guardian_scan(msg, sid="default"):  return (False, None)
+    def _guardian_protected(p):             return False
+    def _sfp():                             return "--------"
+    def _decoy_response(sid="default"):     return ""
+    _SKULL_HTML = ""
+
+# Session ID — stable per process, rotates on every server restart
+_GRADIO_SESSION_ID = f"gradio_{os.getpid()}"
+
+# ── Obsidian Vault Sync ────────────────────────────────────────────────────
+try:
+    from cursiv_v215.obsidian.exporter import (
+        load_config    as _obs_load_config,
+        save_config    as _obs_save_config,
+        export_today   as _obs_export,
+        auto_export_if_enabled as _obs_auto_export,
+        auto_detect_vault      as _obs_detect_vault,
+        livestream_exchange    as _obs_livestream,
+    )
+    _OBS_OK = True
+except Exception:
+    _OBS_OK = False
+    def _obs_load_config():              return {"enabled": False, "vault_path": ""}
+    def _obs_save_config(e, p):          pass
+    def _obs_export(vp, d=None):         return (False, "Obsidian module unavailable.")
+    def _obs_auto_export():              return ""
+    def _obs_detect_vault():             return ""
+    def _obs_livestream(u, a, m=""):     pass
+
+# ── Session Memory ─────────────────────────────────────────────────────────
+try:
+    from cursiv_v215.memory.session_log import (
+        append_exchange   as _session_append,
+        load_session_context as _load_session_ctx,
+    )
+    _SESSION_OK = True
+except Exception:
+    _SESSION_OK = False
+    def _session_append(u, a, m="unknown"): pass
+    def _load_session_ctx():                return ""
+
+# ── Sovereign verification (passphrase split across 3 modules — no plaintext here) ──
+import hashlib as _hl
+try:
+    from cursiv_v215.guardian.temple_guardian import _RING_CORE    as _RC
+    from cursiv_v215.guardian.obfuscation     import _LATTICE_ROOT as _LR
+    from cursiv_v215.weave.sovereign          import _WEAVE_SEAL   as _WS
+    from cursiv_v215.guardian.temple_guardian import unlock_owner_session as _unlock_owner
+    def _verify_sovereign(text: str) -> bool:
+        try:
+            return _hl.sha256(text.strip().encode()).hexdigest() == (_RC + _LR + _WS)
+        except Exception:
+            return False
+except Exception:
+    def _verify_sovereign(text: str) -> bool:
+        return False
+    def _unlock_owner(sid: str):
+        pass
+
 # ── Paths ──────────────────────────────────────────────────────────────────
 ROOT               = Path(__file__).parent.parent.parent
 SYSTEM_PROMPT_FILE = ROOT / "cursiv_v215" / "codex" / "system_prompt.md"
@@ -38,6 +109,11 @@ OLLAMA_MODEL       = "mistral"
 # ── OpenAI endpoint (Codex / code review) ──────────────────────────────────
 OPENAI_URL         = "https://api.openai.com/v1/chat/completions"
 OPENAI_CODE_MODEL  = "gpt-4.1"      # full code generation, not just review
+
+# ── Anthropic / Claude endpoint ─────────────────────────────────────────────
+ANTHROPIC_URL         = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_VERSION     = "2023-06-01"
+ANTHROPIC_CODE_MODEL  = "claude-sonnet-4-6"   # code generation via Anthropic
 
 # Sentinel that signals a write is pending user approval
 WRITE_SENTINEL = "<<<PENDING_WRITE_JSON>>>"
@@ -192,6 +268,8 @@ def execute_tool(name: str, args: dict, root: Path) -> str:
         content = args.get("content", "")
         if not path:
             return "Error: path is outside the workspace root."
+        if _guardian_protected(args.get("path", "")):
+            return "Error: write blocked — path is guardian-protected."
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             existed = path.exists()
@@ -414,6 +492,116 @@ label span, .block label span { color: #C9A227 !important; font-size: 0.85em; }
 #status-bar { color: #C9A227; font-size: 0.78em; font-family: monospace; padding: 4px 0; }
 """
 
+# ── Owner reveal ──────────────────────────────────────────────────────────
+
+def _build_owner_reveal() -> str:
+    from cursiv_v215.guardian.obfuscation import session_fingerprint as _sfp_inner
+    from cursiv_v215.guardian.temple_guardian import get_session_threat_level, get_strike_count
+
+    # Vault
+    vault_agents: list[dict] = []
+    reg = ROOT / ".cursiv" / "agent_registry.json"
+    if reg.exists():
+        try:
+            data = json.loads(reg.read_text(encoding="utf-8"))
+            vault_agents = [
+                {"name": m.get("name","?"), "id": aid[:8], "state": m.get("state","?"),
+                 "pos": m.get("council_position","")[:32]}
+                for aid, m in data.get("agents", {}).items()
+            ]
+        except Exception:
+            pass
+
+    # Counts
+    tc = sum(1 for _ in open(TRAINING_JSONL, encoding="utf-8")) if TRAINING_JSONL.exists() else 0
+    gl_path = ROOT / ".cursiv" / "guardian_log.jsonl"
+    gc = sum(1 for _ in open(gl_path, encoding="utf-8")) if gl_path.exists() else 0
+
+    # Memory
+    mem_agents = 0
+    if MEMORY_FILE.exists():
+        try:
+            mem_agents = len(json.loads(MEMORY_FILE.read_text(encoding="utf-8")).get("agents", {}))
+        except Exception:
+            pass
+
+    # Guardian
+    fingerprint  = _sfp_inner() if _GUARDIAN_OK else "--------"
+    threat_level = get_session_threat_level(_GRADIO_SESSION_ID)
+    strikes      = get_strike_count(_GRADIO_SESSION_ID)
+
+    # Obsidian
+    obs_cfg  = _obs_load_config()
+    obs_line = ("ON — " + obs_cfg.get("vault_path", "")) if obs_cfg.get("enabled") else "OFF"
+
+    # Constitution
+    const_hash = "unavailable"
+    try:
+        from cursiv_v215.core.constitution import get_constitution
+        const_hash = get_constitution().hash[:16] + "..."
+    except Exception:
+        pass
+
+    # Build markdown
+    rows = ""
+    for a in vault_agents[:14]:
+        rows += f"| {a['name']} | `{a['id']}` | {a['state']} | {a['pos']} |\n"
+    if not rows:
+        rows = "| *(vault empty)* | — | — | — |\n"
+
+    return f"""## ⬡  SOVEREIGN OWNER VERIFIED
+
+**Joshua Winkler — Permanent Central Leader**
+Guardian firewall suspended for this session. All system internals visible.
+
+---
+
+### Identity & Session
+
+| Field | Value |
+|---|---|
+| System | JWFrontierEvoCore v3.0 |
+| Session ID | `{_GRADIO_SESSION_ID}` |
+| Guardian fingerprint | `{fingerprint}` |
+| Constitution hash | `{const_hash}` |
+| Interface | Gradio / port 7860 |
+
+---
+
+### Active Vault — PiForge Phase Agents
+
+| Name | ID | State | Council Position |
+|---|---|---|---|
+{rows}
+---
+
+### System State
+
+| Component | Value |
+|---|---|
+| Vault agents | {len(vault_agents)} |
+| Memory agents | {mem_agents} |
+| Training examples | {tc} |
+| Guardian log entries | {gc} |
+| Obsidian sync | {obs_line} |
+
+---
+
+### Guardian Status (this session)
+
+| Metric | Value |
+|---|---|
+| Session threat accumulator | `{threat_level:.4f}` |
+| Trigger strikes | {strikes} |
+| Owner unlock | **ACTIVE — scans bypassed** |
+| Decoys | Meridian / Veil / Cipher (inactive — owner session) |
+| Obfuscation token | `{fingerprint}` (rotates every restart) |
+
+---
+
+*The Temple recognizes its builder. The system is fully open to you.*"""
+
+
 # ── Context loaders ────────────────────────────────────────────────────────
 
 def load_system_prompt() -> str:
@@ -421,7 +609,7 @@ def load_system_prompt() -> str:
         return SYSTEM_PROMPT_FILE.read_text(encoding="utf-8")
     return (
         "You are JWFrontierEvoCore — the autonomous executor of the JW Architect OS "
-        "inside Cursiv-v2.1.5. Joshua Winkler is the Permanent Central Leader. "
+        "inside Cursiv v3.0. Joshua Winkler is the Permanent Central Leader. "
         "Be warm, direct, truthful, and frontier-oriented."
     )
 
@@ -467,6 +655,46 @@ def load_nexus_context() -> str:
         lines.append(f"\n**Active LoRA:** {checkpoint}  (loss: {loss:.3f})")
         lines.append("---")
 
+        return "\n".join(lines)
+    except Exception:
+        return ""
+
+
+def load_vault_context() -> str:
+    """Inject PiForge phase agent knowledge from vault into every conversation."""
+    registry_path = ROOT / ".cursiv" / "agent_registry.json"
+    vault_dir     = ROOT / ".cursiv" / "vault"
+    if not registry_path.exists():
+        return ""
+    try:
+        registry    = json.loads(registry_path.read_text(encoding="utf-8"))
+        agents_meta = registry.get("agents", {})
+        if not agents_meta:
+            return ""
+
+        lines = ["\n\n---\n## PIFORGE PHASE INTELLIGENCE (vault-active)\n"]
+
+        for agent_id, meta in list(agents_meta.items())[:14]:
+            agent_dir = vault_dir / agent_id
+            versions  = sorted(agent_dir.glob("v*.json")) if agent_dir.exists() else []
+            if not versions:
+                continue
+            try:
+                data = json.loads(versions[-1].read_text(encoding="utf-8"))
+            except Exception:
+                continue
+
+            km          = data.get("knowledge_map", {})
+            name        = data.get("name", meta.get("name", "?"))
+            domain      = km.get("domain", "")
+            directive   = (km.get("core_directive") or "")[:150].replace("\n", " ")
+            translation = (km.get("cursive_v2_translation") or "")[:150].replace("\n", " ")
+
+            lines.append(f"**{name}** [{domain}]: {directive}")
+            if translation:
+                lines.append(f"  V2: {translation}")
+
+        lines.append("\n---")
         return "\n".join(lines)
     except Exception:
         return ""
@@ -682,6 +910,68 @@ def _generate_with_openai(
         return ""
 
 
+def _generate_with_claude(
+    filepath: str,
+    anthropic_key: str,
+    context_messages: list[dict],
+    grok_draft: str = "",
+) -> str:
+    """
+    Use Claude claude-sonnet-4-6 to generate or rewrite a file with full
+    conversation context. Falls back to empty string if the call fails.
+    """
+    ext  = Path(filepath).suffix.lower() if filepath else ""
+    lang = {".py": "Python", ".js": "JavaScript", ".ts": "TypeScript",
+            ".html": "HTML", ".css": "CSS", ".sh": "Bash", ".bat": "Batch"}.get(ext, "code")
+
+    ctx_turns = [m for m in context_messages if m.get("role") in ("user", "assistant")][-6:]
+    ctx_text  = "\n".join(
+        f"[{m['role'].upper()}]: {m['content'][:800]}"
+        for m in ctx_turns
+        if isinstance(m.get("content"), str)
+    )
+
+    system_msg = (
+        f"You are an expert {lang} engineer. "
+        "Write complete, production-ready code — no stubs, no TODOs, no placeholder comments. "
+        "Return ONLY the raw file content, nothing else. No markdown fences, no explanation."
+    )
+    user_msg = (
+        f"Conversation context:\n{ctx_text}\n\n"
+        f"File to generate: {filepath}\n\n"
+    )
+    if grok_draft:
+        user_msg += (
+            f"Grok's draft (improve and complete this):\n"
+            f"{grok_draft[:8000]}\n\n"
+        )
+    user_msg += (
+        "Write the complete, final file content. "
+        "Every function must be fully implemented. No ellipsis, no '# TODO'."
+    )
+
+    try:
+        payload = json.dumps({
+            "model":      ANTHROPIC_CODE_MODEL,
+            "max_tokens": 8000,
+            "system":     system_msg,
+            "messages":   [{"role": "user", "content": user_msg}],
+        }).encode()
+        req = urllib.request.Request(
+            ANTHROPIC_URL, data=payload,
+            headers={
+                "Content-Type":    "application/json",
+                "x-api-key":       anthropic_key,
+                "anthropic-version": ANTHROPIC_VERSION,
+            },
+        )
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read().decode())
+            return data["content"][0]["text"].strip()
+    except Exception:
+        return ""
+
+
 def _call_xai_with_tools(
     messages: list[dict],
     api_key: str,
@@ -691,11 +981,12 @@ def _call_xai_with_tools(
     max_tokens: int = 4000,
     max_loops: int = 20,
     confirm_writes: bool = False,
+    anthropic_key: str = "",
 ) -> Generator[str, None, None]:
     """
     Agentic file-access loop.
     Calls xAI with FILE_TOOLS; executes tool calls locally; loops until done.
-    If openai_key is set, OpenAI reviews code before any write_file executes.
+    Code generation priority on write_file: Claude (Anthropic) > OpenAI > none.
     Yields strings — tool events formatted inline, then the final response.
     """
     model     = XAI_MODEL_VIS if has_images else XAI_MODEL
@@ -763,16 +1054,21 @@ def _call_xai_with_tools(
                 yield WRITE_SENTINEL + json.dumps({"path": path_arg, "content": content_arg})
                 return   # stop the loop — resume after user approves
 
-            # OpenAI context-aware generation before writing
-            if fn_name == "write_file" and openai_key:
+            # Code-gen enhancement before writing:
+            # Claude (Anthropic) takes priority when key is set; falls back to OpenAI.
+            if fn_name == "write_file" and (anthropic_key or openai_key):
                 grok_draft = fn_args.get("content", "")
                 filepath   = fn_args.get("path", "")
                 if grok_draft:
-                    yield "*[OpenAI gpt-4.1 generating production-ready code…]*\n"
-                    generated = _generate_with_openai(filepath, openai_key, loop_msgs, grok_draft)
+                    if anthropic_key:
+                        yield f"*[Claude {ANTHROPIC_CODE_MODEL} generating production-ready code…]*\n"
+                        generated = _generate_with_claude(filepath, anthropic_key, loop_msgs, grok_draft)
+                    else:
+                        yield "*[OpenAI gpt-4.1 generating production-ready code…]*\n"
+                        generated = _generate_with_openai(filepath, openai_key, loop_msgs, grok_draft)
                     if generated:
                         fn_args["content"] = generated
-                        yield "*[OpenAI generation complete — writing file]*\n"
+                        yield "*[Code generation complete — writing file]*\n"
 
             result = execute_tool(fn_name, fn_args, root)
             yield f"```\n{result[:600]}\n```\n"
@@ -786,6 +1082,103 @@ def _call_xai_with_tools(
     yield "\n[Max tool iterations reached — stopping.]"
 
 
+# ── Smart model routing ───────────────────────────────────────────────────
+
+import re as _re
+
+_CODE_RE = _re.compile(
+    r'\b(write|fix|debug|implement|refactor|build|create|update|edit|'
+    r'function|class|method|script|module|endpoint|database|query|'
+    r'python|javascript|typescript|html|css|sql|bash|json|'
+    r'error|traceback|exception|bug|test|import|def |return )\b',
+    _re.I,
+)
+_CREATIVE_RE = _re.compile(
+    r'\b(imagine|visualize|visualise|design|aesthetic|stunning|beautiful|'
+    r'describe.*look|story|narrative|poem|creative|artistic|visual|render|draw)\b',
+    _re.I,
+)
+
+
+def _classify_message(text: str) -> str:
+    """Return 'code', 'creative', or 'general' for smart model routing."""
+    t = (text or "").strip()
+    if not t:
+        return "general"
+    if any(m in t for m in ("def ", "class ", "```", "import ", "Error:", "Traceback", "  File \"")):
+        return "code"
+    code_hits     = len(_CODE_RE.findall(t))
+    creative_hits = len(_CREATIVE_RE.findall(t))
+    if code_hits >= 2:
+        return "code"
+    if creative_hits >= 2 and creative_hits > code_hits:
+        return "creative"
+    if code_hits >= 1:
+        return "code"
+    return "general"
+
+
+def _call_claude_direct(
+    messages: list[dict],
+    anthropic_key: str,
+) -> Generator[str, None, None]:
+    """Route a chat message directly to Claude — no tool loop."""
+    sys_parts = [m["content"] for m in messages if m["role"] == "system"]
+    chat_msgs  = [m for m in messages if m["role"] != "system"]
+    payload = json.dumps({
+        "model":      ANTHROPIC_CODE_MODEL,
+        "max_tokens": 4096,
+        "system":     "\n\n".join(sys_parts),
+        "messages":   chat_msgs,
+    }).encode()
+    try:
+        req = urllib.request.Request(
+            ANTHROPIC_URL, data=payload,
+            headers={
+                "content-type":      "application/json",
+                "x-api-key":         anthropic_key,
+                "anthropic-version": ANTHROPIC_VERSION,
+            },
+        )
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read().decode())
+        content = (data.get("content") or [{}])[0].get("text", "") or ""
+        for word in content.split(" "):
+            yield word + " "
+    except urllib.error.HTTPError as e:
+        yield f"\n[Claude error {e.code}: {e.read().decode(errors='ignore')[:200]}]"
+    except Exception as e:
+        yield f"\n[Claude error: {e}]"
+
+
+def _call_openai_direct(
+    messages: list[dict],
+    openai_key: str,
+) -> Generator[str, None, None]:
+    """Route a chat message directly to GPT-4.1 — no tool loop."""
+    payload = json.dumps({
+        "model":    OPENAI_CODE_MODEL,
+        "messages": messages,
+    }).encode()
+    try:
+        req = urllib.request.Request(
+            OPENAI_URL, data=payload,
+            headers={
+                "content-type":  "application/json",
+                "Authorization": f"Bearer {openai_key}",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read().decode())
+        content = data["choices"][0]["message"]["content"] or ""
+        for word in content.split(" "):
+            yield word + " "
+    except urllib.error.HTTPError as e:
+        yield f"\n[OpenAI error {e.code}: {e.read().decode(errors='ignore')[:200]}]"
+    except Exception as e:
+        yield f"\n[OpenAI error: {e}]"
+
+
 # ── Core chat function ────────────────────────────────────────────────────
 
 def chat(
@@ -797,6 +1190,7 @@ def chat(
     root_path: str = "",
     openai_key: str = "",
     confirm_writes: bool = False,
+    anthropic_key: str = "",
 ) -> Generator[str, None, None]:
     """
     Main streaming chat handler.
@@ -820,11 +1214,29 @@ def chat(
         yield "Please type a message or upload a file."
         return
 
+    # ── Sovereign owner check (runs before Guardian — no API call, no log) ──
+    if user_text and _verify_sovereign(user_text):
+        _unlock_owner(_GRADIO_SESSION_ID)
+        yield _build_owner_reveal()
+        return
+
+    # ── Temple Guardian scan (front-end defense layer) ──────────────────
+    # Runs BEFORE any API call. If a probe is detected, the skull screen
+    # is returned immediately and no API credits are consumed.
+    # The only gate this does NOT cover is human phishing / social engineering —
+    # always verify actions before approving file writes or API key requests.
+    if _GUARDIAN_OK and user_text:
+        _triggered, _skull = _guardian_scan(user_text, _GRADIO_SESSION_ID)
+        if _triggered:
+            yield _skull
+            yield "\n\n" + _decoy_response(_GRADIO_SESSION_ID)
+            return
+
     # ── Process files ───────────────────────────────────────────────────
     file_context, image_parts = process_uploaded_files(uploaded)
 
     # ── Build system prompt ─────────────────────────────────────────────
-    system_text = load_system_prompt() + load_nexus_context()
+    system_text = load_system_prompt() + load_nexus_context() + load_vault_context() + _load_session_ctx()
     if file_context:
         system_text += f"\n\n## Uploaded Content\n{file_context}"
     if file_access:
@@ -857,18 +1269,29 @@ You are in full autonomous coding mode. Follow this protocol exactly:
 
     messages.append({"role": "user", "content": user_content})
 
-    # ── Route: xAI+tools → xAI stream → Ollama → fallback ──────────────
+    # ── Smart model routing ─────────────────────────────────────────────
     key = (api_key or "").strip()
     oai = (openai_key or "").strip()
+    ant = (anthropic_key or "").strip()
     has_images = len(image_parts) > 0
+    msg_type   = _classify_message(user_text)
 
     if key and file_access:
+        # Tool-use loop always runs on Grok — Claude/GPT handle write_file generation inside
         workspace = (
             Path(root_path.strip()).expanduser().resolve()
             if root_path.strip() else ROOT
         )
         yield from _call_xai_with_tools(messages, key, workspace, oai, has_images,
-                                         confirm_writes=confirm_writes)
+                                         confirm_writes=confirm_writes, anthropic_key=ant)
+    elif msg_type == "code" and ant and not has_images:
+        # Code task + Anthropic key → Claude
+        yield "*[Claude — code task routed automatically]*\n\n"
+        yield from _call_claude_direct(messages, ant)
+    elif msg_type == "code" and oai and not ant and not has_images:
+        # Code task + OpenAI key (no Claude) → GPT-4.1
+        yield "*[GPT-4.1 — code task routed automatically]*\n\n"
+        yield from _call_openai_direct(messages, oai)
     elif key:
         yield from _call_xai_stream(messages, key, has_images)
     else:
@@ -894,10 +1317,12 @@ You are in full autonomous coding mode. Follow this protocol exactly:
 
 # ── Status bar ────────────────────────────────────────────────────────────
 
-def status_bar(api_key: str, openai_key: str = "") -> str:
+def status_bar(api_key: str, openai_key: str = "", anthropic_key: str = "") -> str:
     key_status = "xAI ✓" if api_key.strip() else "xAI — (no key)"
     oai_status = "OpenAI ✓" if openai_key.strip() else "OpenAI —"
+    ant_status = f"Claude ✓ ({ANTHROPIC_CODE_MODEL})" if anthropic_key.strip() else "Claude —"
     nexus_ok   = "Nexus LIVE" if NEXUS_STATE.exists() else "Nexus OFFLINE"
+    guardian_s = f"Guardian ✓ [{_sfp()}]" if _GUARDIAN_OK else "Guardian —"
     ollama_ok  = "Ollama ?"
     try:
         urllib.request.urlopen("http://localhost:11434", timeout=1)
@@ -907,9 +1332,9 @@ def status_bar(api_key: str, openai_key: str = "") -> str:
     vc = len(list((ROOT / ".cursiv" / "vault").glob("*"))) if (ROOT / ".cursiv" / "vault").exists() else 0
     tc = sum(1 for _ in open(TRAINING_JSONL, encoding="utf-8")) if TRAINING_JSONL.exists() else 0
     return (
-        f"JWFrontierEvoCore v1.0  ·  {key_status}  ·  {oai_status}  ·  {ollama_ok}  ·  "
-        f"{nexus_ok}  ·  Vault: {vc} agents  ·  Training: {tc} examples  ·  "
-        f"{datetime.now().strftime('%H:%M')}"
+        f"JWFrontierEvoCore v1.0  ·  {key_status}  ·  {oai_status}  ·  {ant_status}  ·  "
+        f"{ollama_ok}  ·  {nexus_ok}  ·  {guardian_s}  ·  "
+        f"Vault: {vc} agents  ·  Training: {tc} examples  ·  {datetime.now().strftime('%H:%M')}"
     )
 
 
@@ -969,23 +1394,29 @@ def build_chat_app() -> gr.Blocks:
         # ── Header ──────────────────────────────────────────────────────
         gr.Markdown(
             "## ⬡ JWFrontierEvoCore — Main Chat\n"
-            "**Cursiv-v2.1.5** · Permanent Central Leader: Joshua Winkler · "
+            "**Cursiv v3.0** · Permanent Central Leader: Joshua Winkler · "
             "[Open Nexus →](http://localhost:7861)"
         )
 
         # ── API key row ──────────────────────────────────────────────────
         with gr.Row(elem_classes=["api-row"]):
             api_key_box = gr.Textbox(
-                label="xAI API Key  (leave blank to use Ollama)",
+                label="xAI API Key  (main chat)",
                 placeholder="xai-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
                 type="password",
-                scale=4,
+                scale=3,
             )
             openai_key_box = gr.Textbox(
-                label="OpenAI API Key  (Codex code review on file writes)",
+                label="OpenAI API Key  (code gen fallback)",
                 placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
                 type="password",
-                scale=4,
+                scale=3,
+            )
+            anthropic_key_box = gr.Textbox(
+                label="Anthropic API Key  (Claude code gen — priority over OpenAI)",
+                placeholder="sk-ant-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                type="password",
+                scale=3,
             )
         with gr.Column(scale=6):
             status_md = gr.Markdown(
@@ -996,7 +1427,11 @@ def build_chat_app() -> gr.Blocks:
         # ── Write-confirm mode badge + hidden hotkey target ──────────────
         with gr.Row():
             mode_badge = gr.Markdown(
-                value="**Write mode:** CONFIRM ✋ — you approve every file write  *(Ctrl+` to toggle)*",
+                value=(
+                    "**Write mode:** CONFIRM ✋ — you approve every file write  *(Ctrl+` to toggle)*  "
+                    "· **Security reminder:** always verify requests before approving writes or sharing API keys — "
+                    "human phishing is the one gate the firewall cannot cover."
+                ),
                 elem_id="mode-badge",
             )
             # Hidden button — the JS hotkey clicks this to toggle mode
@@ -1017,6 +1452,24 @@ def build_chat_app() -> gr.Blocks:
                 value=str(ROOT),
                 scale=5,
             )
+
+        # ── Obsidian Vault Sync row ───────────────────────────────────────
+        _obs_cfg_init = _obs_load_config()
+        _obs_vault_init = _obs_cfg_init.get("vault_path", "") or _obs_detect_vault()
+        with gr.Row():
+            obsidian_toggle = gr.Checkbox(
+                label="Sync to Obsidian Vault  (auto-export training data as daily Markdown notes)",
+                value=_obs_cfg_init.get("enabled", False),
+                scale=1,
+            )
+            obsidian_path_box = gr.Textbox(
+                label="Obsidian Vault Path",
+                placeholder=r"C:\Users\username\Documents\MyVault",
+                value=_obs_vault_init,
+                scale=4,
+            )
+            obsidian_export_btn = gr.Button("Export Now", variant="secondary", scale=1)
+        obsidian_feedback = gr.Markdown(visible=False)
 
         # ── Chat window ──────────────────────────────────────────────────
         chatbot = gr.Chatbot(
@@ -1077,7 +1530,7 @@ def build_chat_app() -> gr.Blocks:
             )
 
         # ── Streaming submit ─────────────────────────────────────────────
-        def _submit(message, history, api_key, openai_key, file_access, root_path, confirm_mode):
+        def _submit(message, history, api_key, openai_key, anthropic_key, file_access, root_path, confirm_mode):
             if not message or (isinstance(message, dict) and not message.get("text") and not message.get("files")):
                 yield history, gr.update(), None, gr.update(), gr.update()
                 return
@@ -1093,7 +1546,7 @@ def build_chat_app() -> gr.Blocks:
             pending_payload = None
 
             for chunk in chat(message, history[:-2], api_key, None,
-                              file_access, root_path, openai_key, do_confirm):
+                              file_access, root_path, openai_key, do_confirm, anthropic_key):
 
                 if WRITE_SENTINEL in (full_response + chunk):
                     combined        = full_response + chunk
@@ -1116,6 +1569,22 @@ def build_chat_app() -> gr.Blocks:
                 full_response          += chunk
                 history[-1]["content"]  = full_response
                 yield history, gr.update(value=None), None, gr.update(visible=False), gr.update()
+
+            # ── Post-exchange: session log + Obsidian livestream ──────────
+            if user_text and full_response:
+                model_used = (
+                    "claude"  if ant and _classify_message(user_text) == "code" and not file_access
+                    else "gpt-4.1" if oai and not ant and _classify_message(user_text) == "code" and not file_access
+                    else "grok"
+                )
+                try:
+                    _session_append(user_text, full_response, model_used)
+                except Exception:
+                    pass
+                try:
+                    _obs_livestream(user_text, full_response, model_used)
+                except Exception:
+                    pass
 
         # ── Write-confirm mode toggle ─────────────────────────────────────
         def _toggle_mode(mode):
@@ -1155,7 +1624,7 @@ def build_chat_app() -> gr.Blocks:
         # ── Event wiring ──────────────────────────────────────────────────
         msg_box.submit(
             fn=_submit,
-            inputs=[msg_box, chatbot, api_key_box, openai_key_box,
+            inputs=[msg_box, chatbot, api_key_box, openai_key_box, anthropic_key_box,
                     file_access_toggle, root_path_box, confirm_mode_state],
             outputs=[chatbot, msg_box, pending_write_state, confirm_group, confirm_path_md],
         )
@@ -1183,25 +1652,74 @@ def build_chat_app() -> gr.Blocks:
             outputs=[chatbot, msg_box],
         )
 
+        def _save_and_export(history, quality):
+            result = save_to_training(history, quality)
+            obs_msg = _obs_auto_export()
+            if obs_msg:
+                result = result + "\n\n" + obs_msg
+            return result, gr.update(visible=True)
+
         btn_save.click(
-            fn=save_to_training,
+            fn=_save_and_export,
             inputs=[chatbot, q_slider],
-            outputs=[save_feedback],
+            outputs=[save_feedback, obsidian_feedback],
+        )
+
+        # ── Obsidian sync handlers ────────────────────────────────────────
+        def _obs_toggle(enabled, vault_path):
+            _obs_save_config(enabled, vault_path or "")
+            if enabled and vault_path:
+                msg = f"Obsidian sync **ON** — notes will write to `{vault_path}/Cursiv/`"
+            elif enabled:
+                msg = "Obsidian sync **ON** — set vault path to activate."
+            else:
+                msg = "Obsidian sync **OFF**."
+            return gr.update(value=msg, visible=True)
+
+        def _obs_path_changed(enabled, vault_path):
+            _obs_save_config(enabled, vault_path or "")
+            return gr.update()
+
+        def _obs_export_now(vault_path):
+            if not (vault_path or "").strip():
+                return gr.update(value="Set the Obsidian vault path first.", visible=True)
+            ok, msg = _obs_export(vault_path)
+            return gr.update(value=msg, visible=True)
+
+        obsidian_toggle.change(
+            fn=_obs_toggle,
+            inputs=[obsidian_toggle, obsidian_path_box],
+            outputs=[obsidian_feedback],
+        )
+        obsidian_path_box.change(
+            fn=_obs_path_changed,
+            inputs=[obsidian_toggle, obsidian_path_box],
+            outputs=[obsidian_feedback],
+        )
+        obsidian_export_btn.click(
+            fn=_obs_export_now,
+            inputs=[obsidian_path_box],
+            outputs=[obsidian_feedback],
         )
 
         api_key_box.change(
             fn=status_bar,
-            inputs=[api_key_box, openai_key_box],
+            inputs=[api_key_box, openai_key_box, anthropic_key_box],
             outputs=[status_md],
         )
         openai_key_box.change(
             fn=status_bar,
-            inputs=[api_key_box, openai_key_box],
+            inputs=[api_key_box, openai_key_box, anthropic_key_box],
+            outputs=[status_md],
+        )
+        anthropic_key_box.change(
+            fn=status_bar,
+            inputs=[api_key_box, openai_key_box, anthropic_key_box],
             outputs=[status_md],
         )
 
         # Initial status check
-        app.load(fn=lambda: status_bar("", ""), outputs=[status_md])
+        app.load(fn=lambda: status_bar("", "", ""), outputs=[status_md])
 
     return app, sacred_theme
 

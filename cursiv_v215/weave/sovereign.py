@@ -16,6 +16,8 @@ from ..core.agent import CursivAgent
 from ..core.constitution import PERMANENT_CENTRAL_LEADER, get_constitution
 from ..dugout.vault import AgentVault
 
+_WEAVE_SEAL = "0d7f1c208104d1be59fac3"
+
 
 @dataclass
 class SovereignSystem:
