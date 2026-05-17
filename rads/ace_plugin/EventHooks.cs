@@ -87,6 +87,36 @@ namespace RADS
             RADSBridgeServer.SendBotLevelUp(botId, newLevel);
         }
 
+        /// <summary>
+        /// Call this whenever a RADS bot transitions between landblocks.
+        /// Hook into ACE's Position.LandblockId change or MoveToPosition completion.
+        /// </summary>
+        public static void OnBotChangedLandblock(string botId, string fromLb, string toLb)
+        {
+            RADSBridgeServer.SendBotMoved(botId, fromLb, toLb);
+        }
+
+        /// <summary>
+        /// Call this when a RADS bot kills a creature.
+        /// Pass the resulting corpse WorldObject GUID.
+        /// The bot does NOT loot — the corpse is registered and marked public.
+        /// </summary>
+        public static void OnBotKilledCreature(string botId, uint corpseGuid, string landblock)
+        {
+            // Register the corpse and fire bot_loot event to Python
+            RADSBotController.OnBotKillCreature(botId, corpseGuid, landblock);
+        }
+
+        /// <summary>
+        /// Call this when any player opens a corpse object.
+        /// If it's a RADS bot corpse, the scavenge tracker gets notified.
+        /// Hook into: Corpse.Open() or Player.HandleActionGetAndWieldItem on corpse.
+        /// </summary>
+        public static void OnPlayerOpenCorpse(uint corpseGuid, string playerName, string landblock)
+        {
+            RADSBotController.OnCorpseOpened(corpseGuid, playerName, landblock);
+        }
+
         public static void OnServerTick()
         {
             // Throttle to once per 5 seconds

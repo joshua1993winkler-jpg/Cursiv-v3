@@ -153,6 +153,58 @@ namespace RADS
             Console.WriteLine($"[RADS BotCtrl] World broadcast [{zone}]: {text}");
         }
 
+        /// <summary>
+        /// Mark a monster corpse as freely lootable by any player on the server.
+        ///
+        /// In ACE, corpse loot permissions are controlled by Corpse.LootPermission.
+        /// Setting it to LootPermission.Everyone allows any player to loot regardless
+        /// of who (or what) killed the creature.
+        ///
+        /// ACE reference:
+        ///   var corpse = WorldManager.GetWorldObject(corpseGuid) as Corpse;
+        ///   if (corpse != null)
+        ///       corpse.LootPermission = LootPermission.Everyone;
+        ///
+        /// The corpse_id here is a string key — map it to a WorldObject GUID
+        /// using a lookup table populated when bots kill creatures.
+        /// </summary>
+        public static void MarkCorpsePublic(string corpseId, string landblock)
+        {
+            // TODO: look up corpseId in _corpseGuidMap → get ACE WorldObject GUID
+            // TODO: var corpse = WorldManager.GetWorldObject(guid) as Corpse;
+            // TODO: if (corpse != null) corpse.LootPermission = LootPermission.Everyone;
+            Console.WriteLine($"[RADS BotCtrl] Corpse {corpseId} @ {landblock} → PUBLIC (anyone can loot)");
+        }
+
+        // Track corpse_id → WorldObject GUID for the MarkCorpsePublic lookup
+        private static readonly ConcurrentDictionary<string, uint> _corpseGuidMap = new();
+
+        /// <summary>
+        /// Called in ACE when a RADS bot kills a creature.
+        /// Register the corpse GUID, then immediately fire SendBotKill to Python.
+        /// Do NOT call bot.AutoLoot() — leave the corpse for players.
+        /// </summary>
+        public static void OnBotKillCreature(string botId, uint corpseGuid, string landblock)
+        {
+            var corpseId = $"corpse_{corpseGuid}";
+            _corpseGuidMap[corpseId] = corpseGuid;
+            RADSBridgeServer.SendBotKill(botId, corpseId, landblock);
+        }
+
+        /// <summary>
+        /// Called when any player opens/loots a corpse.
+        /// Check if it's in our map — if so, report it to Python.
+        /// </summary>
+        public static void OnCorpseOpened(uint corpseGuid, string playerName, string landblock)
+        {
+            var corpseId = $"corpse_{corpseGuid}";
+            if (_corpseGuidMap.ContainsKey(corpseId))
+            {
+                RADSBridgeServer.SendCorpseLooted(corpseId, playerName, landblock);
+                _corpseGuidMap.TryRemove(corpseId, out _);
+            }
+        }
+
         // ── Bot profile application ───────────────────────────────────────────
 
         /// <summary>

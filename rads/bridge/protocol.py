@@ -22,9 +22,11 @@ class InboundType(str, Enum):
     BOT_DEATH         = "bot_death"          # a bot was killed
     BOT_LEVEL_UP      = "bot_level_up"       # bot gained a level
     BOT_LOOT          = "bot_loot"           # bot looted a corpse
+    BOT_MOVED         = "bot_moved"          # bot changed landblock (for territory tracking)
     TERRITORY_RAID    = "territory_raid"     # 5+ hostiles entering a zone simultaneously
     SPAWN_CONFIRM     = "spawn_confirm"      # ACE confirms bot spawned
     DESPAWN_CONFIRM   = "despawn_confirm"    # ACE confirms bot removed
+    CORPSE_LOOTED     = "corpse_looted"      # a player looted a corpse left by a RADS bot
     SERVER_TICK       = "server_tick"        # heartbeat every 5s with world summary
 
 
@@ -45,6 +47,7 @@ class OutboundType(str, Enum):
     ALLEGIANCE_UPDATE = "allegiance_update"  # change allegiance declarations
     WORLD_MSG         = "world_msg"          # broadcast message to all players in zone
     VENDOR_PRICE      = "vendor_price"       # update a vendor bot's price table
+    CORPSE_PUBLIC     = "corpse_public"      # mark a monster corpse as freely lootable by anyone
 
 
 # ── Threat levels ──────────────────────────────────────────────────────────────

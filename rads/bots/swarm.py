@@ -30,6 +30,8 @@ from ..bridge.protocol import (
 )
 from ..intelligence.memory import ThreatMemory
 from ..intelligence.threat import ThreatAssessor
+from ..intelligence.territory import TerritoryTracker, LandblockState
+from ..economy.scavenge import ScavengeTracker
 
 log = logging.getLogger("rads.swarm")
 
@@ -61,14 +63,19 @@ class RADSSwarm:
     """
 
     def __init__(self, bridge: ACEBridge, territory_map: Optional[dict] = None):
-        self._bridge   = bridge
-        self._memory   = ThreatMemory()
-        self._assessor = ThreatAssessor(self._memory)
+        self._bridge    = bridge
+        self._memory    = ThreatMemory()
+        self._assessor  = ThreatAssessor(self._memory)
+        self._territory = TerritoryTracker()
+        self._scavenge  = ScavengeTracker()
         self._cohorts: dict[int, RADSCohort] = {}
-        self._territory_map = territory_map or {}   # cohort_id → [landblocks]
+        self._territory_map = territory_map or {}   # cohort_id → [landblocks] (seed only)
         self._start_time    = time.time()
         self._event_count   = 0
         self._bot_counter   = 0
+
+        # Track how many RADS bots are in each landblock for presence ticks
+        self._lb_bot_count: dict[str, dict[int, int]] = {}  # lb → {cohort_id → count}
 
         self._init_cohorts()
         self._register_bridge_handlers()
@@ -102,6 +109,8 @@ class RADSSwarm:
         b.on(InboundType.TERRITORY_RAID, self._on_territory_raid)
         b.on(InboundType.BOT_LEVEL_UP,   self._on_bot_level_up)
         b.on(InboundType.BOT_LOOT,       self._on_bot_loot)
+        b.on(InboundType.CORPSE_LOOTED,  self._on_corpse_looted)
+        b.on(InboundType.BOT_MOVED,      self._on_bot_moved)
         b.on(InboundType.SERVER_TICK,    self._on_server_tick)
         b.on(InboundType.SPAWN_CONFIRM,  self._on_spawn_confirm)
 
@@ -115,14 +124,17 @@ class RADSSwarm:
         )
 
     async def _maintenance_loop(self) -> None:
-        """Periodic tasks: KOS sync, dead bot respawn requests, compaction."""
+        """Periodic tasks: KOS sync, dead bot respawn, territory ticks, compaction."""
         while True:
             await asyncio.sleep(60)
             try:
                 await self._sync_kos_list()
                 await self._request_dead_bot_respawns()
+                await self._tick_territory()
+                self._scavenge.expire_old_corpses()
                 if int(time.time()) % 3600 < 60:
                     self._memory.compact()
+                    self._territory.save()
             except Exception as e:
                 log.error(f"[RADS Swarm] Maintenance error: {e}")
 
@@ -188,6 +200,13 @@ class RADSSwarm:
         if bot:
             bot.set_dead()
 
+        # Tell territory tracker — may flip claimed → contested
+        owner_cohort = self._territory.bot_killed(evt.landblock)
+        territory_note = ""
+        if owner_cohort is not None:
+            state = self._territory.get_state(evt.landblock)
+            territory_note = f" · territory now {state.value}"
+
         assessment = self._assessor.assess_bot_kill(
             killer_name  = evt.killer,
             killer_level = evt.bot_level,
@@ -195,20 +214,31 @@ class RADSSwarm:
         )
 
         self._log_event("bot_death", {
-            "bot_id": evt.bot_id, "killer": evt.killer,
+            "bot_id":     evt.bot_id,
+            "killer":     evt.killer,
+            "landblock":  evt.landblock,
             "retaliation": assessment.level.name,
+            "territory":  territory_note.strip(" ·") or "unclaimed",
         })
 
+        # Retaliation from owning cohort first, then pull in neighbor if needed
         if cohort:
             await cohort.respond_to_threat(assessment)
-            # Request respawn after a short delay
-            await asyncio.sleep(30)
-            await self._bridge.send(pack(
-                OutboundType.SPAWN_BOT,
-                bot_type  = bot.role.value if bot else "hunter",
-                cohort_id = cohort.cohort_id,
-                landblock = evt.landblock,
-            ))
+
+        if assessment.level >= ThreatLevel.SWARM:
+            neighbor = self._nearest_cohort(evt.landblock, exclude=cohort.cohort_id if cohort else -1)
+            if neighbor:
+                extra = await neighbor.respond_to_threat(assessment)
+                log.info(f"[RADS] Cross-cohort retaliation: {extra} bots from cohort {neighbor.cohort_id}")
+
+        # Respawn the dead bot back into the same landblock after 30s
+        await asyncio.sleep(30)
+        await self._bridge.send(pack(
+            OutboundType.SPAWN_BOT,
+            bot_type  = bot.role.value if bot else "hunter",
+            cohort_id = cohort.cohort_id if cohort else 0,
+            landblock = evt.landblock,
+        ))
 
     async def _on_territory_raid(self, msg: dict) -> None:
         evt = TerritoryRaidEvent.from_dict(msg)
@@ -244,7 +274,50 @@ class RADSSwarm:
             log.debug(f"[RADS] {bot_id} reached level {new_level}")
 
     async def _on_bot_loot(self, msg: dict) -> None:
-        pass   # economy tick handles distribution
+        """
+        Bot killed a monster. Never loot it — mark corpse public immediately.
+        Anyone nearby can walk up and take everything.
+        """
+        corpse_id = msg.get("corpse_id", "")
+        landblock = msg.get("landblock", "")
+        bot_id    = msg.get("bot_id", "")
+
+        if corpse_id:
+            # Register in scavenge tracker
+            self._scavenge.on_corpse_created(corpse_id, landblock, bot_id)
+
+            # Tell ACE to mark this corpse open to all
+            await self._bridge.send(pack(
+                OutboundType.CORPSE_PUBLIC,
+                corpse_id = corpse_id,
+                landblock = landblock,
+            ))
+
+            self._log_event("corpse_left", {
+                "bot_id":    bot_id,
+                "corpse_id": corpse_id,
+                "landblock": landblock,
+            })
+
+    async def _on_corpse_looted(self, msg: dict) -> None:
+        """A player picked up loot from a corpse a RADS bot left behind."""
+        corpse_id   = msg.get("corpse_id", "")
+        player_name = msg.get("player_name", "unknown")
+        self._scavenge.on_corpse_looted(corpse_id, player_name)
+        log.debug(f"[Scavenge] {player_name} looted {corpse_id}")
+
+    async def _on_bot_moved(self, msg: dict) -> None:
+        """Bot changed landblock — update its record for territory tracking."""
+        bot_id       = msg.get("bot_id", "")
+        old_landblock = msg.get("from_landblock", "")
+        new_landblock = msg.get("to_landblock",   "")
+
+        cohort = self._cohort_for_bot(bot_id)
+        bot    = cohort.get_bot(bot_id) if cohort else None
+        if bot:
+            if old_landblock:
+                self._territory.bot_left(old_landblock)
+            bot.landblock = new_landblock
 
     async def _on_server_tick(self, msg: dict) -> None:
         self._event_count += 1
@@ -267,7 +340,49 @@ class RADSSwarm:
             cohort.register_bot(bot)
             log.info(f"[RADS] Spawned {bot_id} in cohort {cohort_id} @ {landblock}")
 
+            # Immediately register presence so territory tracker knows this lb is occupied
+            if landblock and landblock != "0000":
+                self._territory.bot_present(landblock, cohort_id, count=1)
+
     # ── Cross-cohort coordination ─────────────────────────────────────────────
+
+    async def _tick_territory(self) -> None:
+        """
+        Every minute: tally bot locations → feed presence to TerritoryTracker.
+        Also checks abandonment and updates cohort territory lists from live claims.
+        """
+        # Count live bots per landblock per cohort
+        lb_snapshot: dict[str, dict[int, int]] = {}
+        for cohort in self._cohorts.values():
+            for bot in cohort.alive_bots:
+                lb = bot.landblock
+                if lb and lb != "0000":
+                    lb_snapshot.setdefault(lb, {})
+                    lb_snapshot[lb][cohort.cohort_id] = lb_snapshot[lb].get(cohort.cohort_id, 0) + 1
+
+        # Feed presence to territory tracker — majority cohort per landblock
+        for lb, cohort_counts in lb_snapshot.items():
+            dominant_cohort = max(cohort_counts, key=cohort_counts.get)
+            total_bots      = sum(cohort_counts.values())
+            self._territory.bot_present(lb, dominant_cohort, total_bots)
+
+        # Check abandonment — bots left a zone
+        lost_blocks = self._territory.tick_abandonment()
+        if lost_blocks:
+            log.info(f"[Territory] Lost {len(lost_blocks)} landblocks this tick: {lost_blocks[:5]}")
+
+        # Push live territory back to cohort objects so routing stays accurate
+        for cohort in self._cohorts.values():
+            live_territory = set(self._territory.get_cohort_territory(cohort.cohort_id))
+            cohort.territory = live_territory
+
+        # Log territory summary every 10 ticks (~10 min)
+        if self._event_count % 10 == 0:
+            ts = self._territory.territory_summary()
+            log.info(
+                f"[Territory] Claimed: {ts['claimed']} · Contested: {ts['contested']} "
+                f"· Claiming: {ts['claiming']} · Top: {ts['top_cohorts']}"
+            )
 
     async def _sync_kos_list(self) -> None:
         kos = self._memory.kos_list()
@@ -350,19 +465,25 @@ class RADSSwarm:
             for c in self._cohorts.values()
         )
         uptime_h = (time.time() - self._start_time) / 3600
+        ts       = self._territory.territory_summary()
         return (
             f"Uptime {uptime_h:.1f}h · {total_alive}/{self._bot_counter} bots alive "
-            f"· {total_engaging} in combat · {self._memory.summary()}"
+            f"· {total_engaging} in combat · "
+            f"Territory: {ts['claimed']} claimed / {ts['contested']} contested / {ts['claiming']} claiming · "
+            f"Scavenge: {self._scavenge.summary()} · "
+            f"{self._memory.summary()}"
         )
 
     def full_status(self) -> dict:
         return {
-            "uptime_h":   round((time.time() - self._start_time) / 3600, 2),
-            "total_bots": self._bot_counter,
-            "cohorts":    [c.status_summary() for c in self._cohorts.values()],
-            "threats":    self._memory.summary(),
-            "top_threats": [
+            "uptime_h":        round((time.time() - self._start_time) / 3600, 2),
+            "total_bots":      self._bot_counter,
+            "territory":       self._territory.territory_summary(),
+            "cohorts":         [c.status_summary() for c in self._cohorts.values()],
+            "threats":         self._memory.summary(),
+            "top_threats":     [
                 {"name": r.name, "score": r.threat_score, "kos": r.kos, "kills": r.kill_count}
                 for r in self._memory.top_threats(5)
             ],
+            "territory_map":   self._territory.map_snapshot()[:20],  # top 20 hottest landblocks
         }

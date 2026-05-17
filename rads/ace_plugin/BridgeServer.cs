@@ -144,6 +144,50 @@ namespace RADS
             });
         }
 
+        /// <summary>
+        /// Called when a RADS bot moves to a new landblock.
+        /// Python uses this to keep territory presence counts accurate.
+        /// </summary>
+        public static void SendBotMoved(string botId, string fromLandblock, string toLandblock)
+        {
+            SendEvent(new {
+                type           = "bot_moved",
+                ts             = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                bot_id         = botId,
+                from_landblock = fromLandblock,
+                to_landblock   = toLandblock,
+            });
+        }
+
+        /// <summary>
+        /// Called when any player loots a corpse that was left by a RADS bot.
+        /// </summary>
+        public static void SendCorpseLooted(string corpseId, string playerName, string landblock)
+        {
+            SendEvent(new {
+                type        = "corpse_looted",
+                ts          = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                corpse_id   = corpseId,
+                player_name = playerName,
+                landblock   = landblock,
+            });
+        }
+
+        /// <summary>
+        /// Called when a RADS bot kills a monster and does NOT loot it.
+        /// Sends the bot_loot event so Python can immediately mark the corpse public.
+        /// </summary>
+        public static void SendBotKill(string botId, string corpseId, string landblock)
+        {
+            SendEvent(new {
+                type      = "bot_loot",
+                ts        = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                bot_id    = botId,
+                corpse_id = corpseId,
+                landblock = landblock,
+            });
+        }
+
         // ── Receive a command from Python and route it ─────────────────────────
 
         private static void HandleInboundCommand(string json)
@@ -224,6 +268,13 @@ namespace RADS
                         RADSBotController.BroadcastWorldMessage(
                             root.GetProperty("zone").GetString()!,
                             root.GetProperty("text").GetString()!
+                        );
+                        break;
+
+                    case "corpse_public":
+                        RADSBotController.MarkCorpsePublic(
+                            root.GetProperty("corpse_id").GetString()!,
+                            root.GetProperty("landblock").GetString()!
                         );
                         break;
 
