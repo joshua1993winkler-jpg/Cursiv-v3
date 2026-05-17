@@ -1296,15 +1296,14 @@ You are in full autonomous coding mode. Follow this protocol exactly:
         )
         yield from _call_xai_with_tools(messages, key, workspace, oai, has_images,
                                          confirm_writes=confirm_writes, anthropic_key=ant)
-    elif msg_type == "code" and ant and not has_images:
-        # Code task + Anthropic key → Claude
-        yield "*[Claude — code task routed automatically]*\n\n"
+    elif ant:
+        # Claude preferred for all conversation — adopts Cursiv persona reliably
         yield from _call_claude_direct(messages, ant)
-    elif msg_type == "code" and oai and not ant and not has_images:
-        # Code task + OpenAI key (no Claude) → GPT-4.1
-        yield "*[GPT-4.1 — code task routed automatically]*\n\n"
+    elif oai:
+        # GPT-4.1 second choice — also adopts personas correctly
         yield from _call_openai_direct(messages, oai)
     elif key:
+        # Grok fallback — note: Grok resists persona overlays by design
         yield from _call_xai_stream(messages, key, has_images)
     else:
         # Try Ollama (local); it cannot handle images
