@@ -1,0 +1,251 @@
+/*
+ * RADS Bot Controller — executes Python commands as in-game actions on ACEmulator.
+ *
+ * Wire this to ACE's WorldManager / Landblock / WorldObject API.
+ * Each method corresponds to an inbound command from the Python bridge.
+ *
+ * INTEGRATION POINTS (search for TODO):
+ *   - WorldManager.FindObject(name) — locate a WorldObject by player name
+ *   - Creature.MoveToPosition()     — pathfind a bot to coords
+ *   - Creature.AttackTarget()       — initiate combat on a target
+ *   - LandblockManager.GetLandblock() — resolve a landblock ID to a Position
+ *
+ * ACE source: https://github.com/ACEmulator/ACE
+ */
+
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+
+// TODO: add your ACE using directives here, e.g.:
+// using ACE.Server.WorldObjects;
+// using ACE.Server.Managers;
+// using ACE.Entity;
+
+namespace RADS
+{
+    public static class RADSBotController
+    {
+        // bot_id → in-game WorldObject GUID (populated on SpawnBot confirm)
+        private static readonly ConcurrentDictionary<string, uint> _botGuids = new();
+
+        // Global KOS list — bots attack these players on sight
+        private static readonly HashSet<string> _kosNames = new(StringComparer.OrdinalIgnoreCase);
+
+        // ── Movement ──────────────────────────────────────────────────────────
+
+        public static void MoveBot(string botId, string landblock)
+        {
+            if (!_botGuids.TryGetValue(botId, out var guid)) return;
+            // TODO: var bot = WorldManager.GetWorldObject(guid) as Creature;
+            // TODO: var pos = LandblockManager.GetLandblock(landblock)?.GetSpawnPosition();
+            // TODO: if (bot != null && pos != null) bot.MoveToPosition(pos);
+            Console.WriteLine($"[RADS BotCtrl] MoveBot {botId} → {landblock}");
+        }
+
+        public static void SetPatrol(string botId, List<string> route)
+        {
+            if (!_botGuids.TryGetValue(botId, out var guid)) return;
+            // TODO: store patrol route on the bot's custom properties
+            // TODO: start patrol coroutine cycling through landblocks
+            Console.WriteLine($"[RADS BotCtrl] SetPatrol {botId} — {route.Count} waypoints");
+        }
+
+        public static void SetIdle(string botId)
+        {
+            if (!_botGuids.TryGetValue(botId, out var guid)) return;
+            // TODO: cancel any active movement/combat task on this bot
+            Console.WriteLine($"[RADS BotCtrl] SetIdle {botId}");
+        }
+
+        // ── Combat ────────────────────────────────────────────────────────────
+
+        public static void AttackTarget(string botId, string targetName)
+        {
+            if (!_botGuids.TryGetValue(botId, out var guid)) return;
+            // TODO: var bot    = WorldManager.GetWorldObject(guid) as Creature;
+            // TODO: var target = WorldManager.FindPlayerByName(targetName);
+            // TODO: if (bot != null && target != null) bot.AttackTarget(target);
+            Console.WriteLine($"[RADS BotCtrl] AttackTarget {botId} → {targetName}");
+        }
+
+        public static void FollowTarget(string botId, string targetName)
+        {
+            if (!_botGuids.TryGetValue(botId, out var guid)) return;
+            // TODO: var bot    = WorldManager.GetWorldObject(guid) as Creature;
+            // TODO: var target = WorldManager.FindPlayerByName(targetName);
+            // TODO: if (bot != null && target != null) bot.MoveToObject(target);
+            Console.WriteLine($"[RADS BotCtrl] FollowTarget {botId} → {targetName}");
+        }
+
+        // ── KOS list ──────────────────────────────────────────────────────────
+
+        public static void UpdateKOSList(List<string> names)
+        {
+            lock (_kosNames)
+            {
+                _kosNames.Clear();
+                foreach (var n in names)
+                    _kosNames.Add(n);
+            }
+            Console.WriteLine($"[RADS BotCtrl] KOS list updated — {names.Count} entries");
+        }
+
+        public static bool IsKOS(string playerName) => _kosNames.Contains(playerName);
+
+        // ── Spawn / Despawn ───────────────────────────────────────────────────
+
+        public static void SpawnBot(string botType, int cohortId, string landblock)
+        {
+            // TODO: generate a unique bot_id
+            var botId = $"c{cohortId:D2}_{botType[..Math.Min(2, botType.Length)]}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds() % 10000:D4}";
+
+            // TODO: look up the RADS bot weenie WCID for this role from the database
+            // TODO: uint wcid = RADSWeenieMap.GetWCID(botType);
+            // TODO: var pos  = LandblockManager.GetLandblock(landblock)?.GetSpawnPosition();
+            // TODO: var bot  = WorldManager.AddObject(wcid, pos) as Creature;
+            // TODO: if (bot != null) { _botGuids[botId] = bot.Guid.Full; ApplyBotProfile(bot, botType, cohortId); }
+
+            // Confirm back to Python
+            RADSBridgeServer.SendEvent(new {
+                type      = "spawn_confirm",
+                bot_id    = botId,
+                cohort_id = cohortId,
+                role      = botType,
+                landblock = landblock,
+                level     = 275,
+            });
+
+            Console.WriteLine($"[RADS BotCtrl] Spawned {botId} ({botType}) in cohort {cohortId} @ {landblock}");
+        }
+
+        public static void DespawnBot(string botId)
+        {
+            if (!_botGuids.TryGetValue(botId, out var guid))
+            {
+                Console.WriteLine($"[RADS BotCtrl] DespawnBot: {botId} not found");
+                return;
+            }
+            // TODO: var bot = WorldManager.GetWorldObject(guid);
+            // TODO: if (bot != null) bot.Destroy();
+            _botGuids.TryRemove(botId, out _);
+            Console.WriteLine($"[RADS BotCtrl] Despawned {botId}");
+
+            RADSBridgeServer.SendEvent(new {
+                type   = "despawn_confirm",
+                bot_id = botId,
+            });
+        }
+
+        // ── Emote / Chat ──────────────────────────────────────────────────────
+
+        public static void Emote(string botId, string text)
+        {
+            if (!_botGuids.TryGetValue(botId, out var guid)) return;
+            // TODO: var bot = WorldManager.GetWorldObject(guid) as Creature;
+            // TODO: bot?.EmoteManager.DoText(text);
+            Console.WriteLine($"[RADS BotCtrl] Emote {botId}: \"{text}\"");
+        }
+
+        public static void BroadcastWorldMessage(string zone, string text)
+        {
+            // TODO: PlayerManager.BroadcastToLandblock(zone, text);
+            Console.WriteLine($"[RADS BotCtrl] World broadcast [{zone}]: {text}");
+        }
+
+        // ── Bot profile application ───────────────────────────────────────────
+
+        /// <summary>
+        /// Apply RADS combat stats to a freshly spawned bot creature.
+        /// All bots are mechanically maxed — visually they look like a regular
+        /// character in default starting clothes (linen shirt, leather pants, no armor).
+        /// The terror is invisible until they fight.
+        /// </summary>
+        public static void ApplyBotProfile(
+            /*Creature*/ object bot,
+            string role,
+            int cohortId)
+        {
+            // TODO: cast bot to ACE Creature and apply:
+            //
+            // ATTRIBUTES — all at 330 (max natural cap with buffs, matches a fully buffed 275)
+            //   bot.Strength.Current     = 330;
+            //   bot.Endurance.Current    = 330;
+            //   bot.Coordination.Current = 330;
+            //   bot.Quickness.Current    = 330;
+            //   bot.Focus.Current        = 330;
+            //   bot.Self.Current         = 330;
+            //
+            // VITALS
+            //   bot.Health.MaxValue   = 600;   // buffed Endurance cap
+            //   bot.Stamina.MaxValue  = 600;
+            //   bot.Mana.MaxValue     = 600;   // for casters/elites
+            //   bot.Health.Current    = bot.Health.MaxValue;
+            //   bot.Stamina.Current   = bot.Stamina.MaxValue;
+            //   bot.Mana.Current      = bot.Mana.MaxValue;
+            //
+            // SKILLS — set to 999 (server cap, equivalent to specialized + buffed 275)
+            //   bot.GetCreatureSkill(Skill.MeleeDefense).Current  = 999;
+            //   bot.GetCreatureSkill(Skill.MissileDefense).Current = 999;
+            //   bot.GetCreatureSkill(Skill.MagicDefense).Current   = 999;
+            //   bot.GetCreatureSkill(Skill.Sword).Current           = 999;  // or role-specific weapon
+            //   bot.GetCreatureSkill(Skill.WarMagic).Current        = 999;  // elites
+            //   bot.GetCreatureSkill(Skill.LifeMagic).Current       = 999;  // for self-healing
+            //   bot.GetCreatureSkill(Skill.CreatureEnchantment).Current = 999;
+            //
+            // LEVEL
+            //   bot.Level = 275;
+            //
+            // ACTIVE SPELL BUFFS (permanent, never expire)
+            //   Apply the standard 7-Banes, Epic Reflections, Epic Blade Bane, etc.
+            //   Use bot.EnchantmentManager.Add() for each:
+            //     - Imperil VII (armor debuff on hit)
+            //     - Invulnerability VII (+200 armor rating)
+            //     - Epic/Legendary Strength/Endurance/Quickness/Coordination buffs
+            //     - Regeneration VII (Health regen)
+            //     - Rejuvenation VII (Stamina regen)
+            //     - Mana Renewal VII (Mana regen)
+            //     - All six attribute buffs at max level
+            //     - All three defense skill buffs at max level
+            //     - All applicable weapon skill buffs at max level
+            //
+            // EQUIPMENT — role determines loadout, but visual model stays vanilla
+            //
+            //   Elites and Guards:
+            //     Weapon:  best in-game sword (e.g. Atlatl/Virindi Sword equivalent WCID)
+            //              with max tinks: 8× Coronet Steel (AL), Lum/Imbue combinations
+            //     Shield:  Kite Shield + Tinks for max AL
+            //     Armor:   Legendary (Epic) stat pieces — but APPEARANCE OVERRIDE applied:
+            //              bot.SetProperty(PropertyInt.ArmorType, 0)   → shows as unarmored/cloth
+            //              OR equip actual cloth/linen items but give them the hidden armor values
+            //              of the legendary set via EnchantmentManager buffs instead
+            //
+            //   Hunters and Scouts:
+            //     Weapon:  Atlatl or Crossbow with max Imbue/Tink
+            //     Armor:   Same armor-value-but-cloth-appearance trick
+            //
+            //   Crafters and Monarchs:
+            //     Weapon:  Staff or Wand
+            //     Visual:  Linen shirt, leather pants (default new character appearance)
+            //
+            // APPEARANCE (the key detail — max power, zero intimidation visually)
+            //   bot.SetProperty(PropertyDataId.Setup, 0x02000001);   // default male/female setup
+            //   bot.SetProperty(PropertyDataId.TableSetup, ...);     // default palette
+            //   Equip only: linen shirt, linen trousers, leather boots
+            //   No helmet. No visible armor. Just a dude in shorts.
+            //
+            // This creates the "they look like a fresh level-1 but they hit like an endgame boss" effect.
+            // Players will not understand what is killing them until it is too late.
+
+            Console.WriteLine($"[RADS BotCtrl] Applied max profile to {role} (cohort {cohortId})");
+        }
+
+        // ── Tick — called by ACE server tick, checks KOS players in range ─────
+
+        public static void OnServerTick(int onlinePlayers, int activeBots)
+        {
+            // TODO: iterate online players, check _kosNames, auto-aggro matching bots
+            RADSBridgeServer.SendServerTick(onlinePlayers, activeBots);
+        }
+    }
+}
