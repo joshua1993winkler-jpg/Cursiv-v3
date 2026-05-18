@@ -21,9 +21,10 @@ class EvoConfig:
     # ── Summarisation ──────────────────────────────────────────────────────────
     summary_max_chars:      int   = 800   # max chars per stored summary
     min_quality_score:      float = 0.35  # below this, interaction is discarded
-    ollama_model:           str   = "mistral"
+    ollama_model:           str   = "llama3.1"
     ollama_url:             str   = "http://localhost:11434"
-    ollama_timeout_s:       int   = 25
+    ollama_timeout_s:       int   = 120
+    ollama_num_ctx:         int   = 32768   # context window — must fit full 14-agent deliberation
 
     # ── Embeddings ─────────────────────────────────────────────────────────────
     embedding_model:  str = "all-MiniLM-L6-v2"   # 22 MB, CPU-fast

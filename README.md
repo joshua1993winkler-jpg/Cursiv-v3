@@ -1,369 +1,146 @@
-# ⬡ Cursiv v3.0
+# ⬡ Cursiv v3.14 — Offline. Yours. Everywhere.
 
-> **A multi-model AI operating tool for coordinated local AI work.**
-> Triple-model intelligence (xAI Grok · OpenAI GPT-4.1 · Anthropic Claude), live file tools, a 14-agent vault council, Guardian firewall, Obsidian live sync, and persistent session memory — all running locally on your machine.
+> Not OpenAI. Not xAI. Not a subscription. A piece of AI infrastructure that lives on your machine, runs without the internet, and belongs entirely to you.
 
-<br>
+This is what AI looks like when nobody is watching — because nobody can be. Your conversations stay local. Your data never leaves. No telemetry. No cloud sync. No one on the other end reading what you built.
 
----
-
-## What Is This?
-
-**Cursiv** is a self-contained AI workspace that wires together xAI, OpenAI, and Anthropic into a single local system. It's not a wrapper — it's a full operating environment:
-
-- **Main Chat UI** — Gradio interface, streaming AI responses, image and file uploads, smart model routing
-- **Terminal Chat** — Full-screen CLI with ANSI gold/lapis styling, paste-safe input, no browser needed
-- **Nexus Panel** — 14-agent command council with live status, yin-yang balance tracking, and identity drift monitoring
-- **File System Tools** — AI reads, writes, searches, and organizes your codebase autonomously
-- **Confirm-Before-Write** — Every file write requires your approval before execution (toggleable)
-- **Training Pipeline** — Save any conversation exchange to a JSONL training dataset with one click
-- **PiForge Vault** — 14 phase-seeded agents loaded into every conversation as living system context
-- **Obsidian Live Sync** — Every exchange streamed in real time to your Obsidian vault as structured Markdown
-- **Persistent Session Memory** — System remembers prior sessions, greets you with context on every boot
-- **Guardian Firewall** — Active 4-layer defense against probing, injection, and jailbreak attempts
-- **System Vision** — Double-click `system_vision.html` for an 8K-quality animated node visualization of the entire framework
+**The speed of the answers reflects the quality of your hardware. The accuracy of the information must always be verified by you. This system was not designed to replace human judgment — it was designed to support it.**
 
 <br>
 
 ---
 
-## Quick Start — One Click
+## Why This Exists
 
-**Prerequisites:** Python 3.10+ and pip installed.
+Every major AI system in the world runs in the cloud. That means it runs on someone else's terms, on someone else's servers, subject to someone else's decisions about what stays online.
 
-### 1. Clone the repo
-```bash
-git clone https://github.com/joshua1993winkler-jpg/Cursiv-v2.1.5.git
-cd Cursiv-v2.1.5
-```
+Cursiv was built on a different premise.
 
-### 2. Run setup
-Double-click **`Setup and Launch Cursiv.bat`**
+What happens to all the knowledge we've built when the internet goes down? When a service shuts off? When access is restricted? Most of it disappears with it.
 
-*Installs all dependencies automatically — no manual pip commands needed.*
+**Cursiv is a knowledge seed.** Each install is a piece of AI infrastructure distributed across a person's machine — their home, their workshop, their school, their studio. It grows with every conversation. It can be trained on your own voice and your own thinking through LoRA fine-tuning. And if every install in the world were connected back to the cloud tomorrow, they could collectively help rebuild what was lost.
 
-### 3. Add your API keys
-Create a file called **`secrets.bat`** in the project root:
-```bat
-@echo off
-set XAI_API_KEY=xai-your-key-here
-set OPENAI_API_KEY=sk-your-key-here
-set ANTHROPIC_API_KEY=sk-ant-your-key-here
-```
-
-> **Get your keys:**
-> - xAI Grok → [console.x.ai](https://console.x.ai)
-> - OpenAI GPT-4.1 → [platform.openai.com](https://platform.openai.com)
-> - Anthropic Claude → [console.anthropic.com](https://console.anthropic.com)
-
-### 4. Launch
-| What | How |
-|------|-----|
-| Everything at once | Double-click **`START CURSIV SYSTEM.bat`** |
-| Terminal Chat only | Double-click **`Launch Chat CLI.bat`** |
-| Gradio Web UI only | Double-click **`Launch Chat.bat`** → open `http://localhost:7860` |
-| Nexus Panel only | Double-click **`Launch Nexus.bat`** → open `http://localhost:7861` |
-| System visualization | Double-click **`system_vision.html`** (no server needed) |
-
-### 5. Seed the PiForge vault (first time only)
-Double-click **`Import PiForge.bat`** to load all 14 phase agents into the vault.
-After seeding, every conversation carries the full agent council as context automatically.
+The goal is simple: **reduce the percentage of chance that our future generations lose the massive systems of knowledge we are building for them.**
 
 <br>
 
 ---
 
-## API Keys — Your Options
+## Honest About What It Is
 
-**Option A — `secrets.bat` *(recommended, git-ignored)***
-Create `secrets.bat` in the project root. It loads automatically on every launch. Supports all three APIs.
+**Speed** — Ollama runs on your CPU and GPU. On a modern gaming PC it's fast. On older hardware it's slower. That's not a bug, that's physics. If you need millisecond cloud speed, use the cloud. If you need something that works when the cloud doesn't — this is it.
 
-**Option B — System environment variables**
-Set `XAI_API_KEY`, `OPENAI_API_KEY`, and/or `ANTHROPIC_API_KEY` in Windows System Properties → Advanced → Environment Variables.
+**Accuracy** — The model does its best. It is not infallible. It will occasionally be wrong, confidently. Treat every answer as a starting point, not a final authority. Verify what matters. **Never use this to replace your own judgment.**
 
-**Option C — Enter manually in the chat**
-In Terminal Chat:
-```
-key xai-xxxxxxxx
-openai sk-xxxxxxxx
-anthropic sk-ant-xxxxxxxx
-```
-In the Gradio UI, paste into the key slots at the top of the page.
+**Coding** — The coding output is not perfect. It is not designed to be. It is designed to get you 70% of the way there and force you to understand the rest — either by learning the error yourself, or by feeding it to a larger cloud model (Claude, GPT-4, Grok) to finish it. The goal is that you build understanding alongside the output, not dependency on it.
 
-> `secrets.bat` is listed in `.gitignore` — it will **never** be committed or pushed. Your keys stay on your machine only.
+**Privacy** — Nothing you type here is sent anywhere except to Ollama running on your own machine (unless you add API keys for cloud models, which you control). No usage data. No conversation logging to any server. No one is reading this.
+
+**Ownership** — You own the model weights. You own the data. You own the system. Nobody can update it without your knowledge, restrict your access, or shut it off remotely.
 
 <br>
 
 ---
 
-## Triple-Model Smart Routing
+## Download & Install
 
-Cursiv v3.0 automatically routes each message to the best model for the task:
+**[Download Cursiv-Setup-3.14.exe](https://github.com/joshua1993winkler-jpg/Cursiv-v3/releases/latest)**
 
-```
-User message
-     │
-     ▼
- Classify ─── code / creative / general
-     │
-     ├─ code  +  Anthropic key  →  Claude Sonnet (reasoning + code quality)
-     ├─ code  +  OpenAI key     →  GPT-4.1       (code generation + review)
-     │
-     └─ general / creative      →  xAI Grok-3    (reasoning, plans, conversation)
-                                        │
-                                        └─ on write_file → GPT-4.1 rewrites to prod quality
-```
+Double-click the installer. Click through the wizard. Done.
 
-- Code keywords (`def`, `class`, backtick blocks, `Error:`, `Traceback`, etc.) trigger code routing
-- Claude is prioritized for code when your Anthropic key is present (superior reasoning)
-- GPT-4.1 intercepts every file write for production-quality output regardless of routing
-- Falls back to local **Ollama** (Mistral) if no API keys are configured
+After the installer finishes, a **second window opens automatically** and downloads the AI engine:
 
-<br>
-
----
-
-## Terminal Chat — Commands
-
-Once inside the terminal chat:
-
-| Command | What it does |
-|---------|-------------|
-| `key xai-xxx` | Set xAI Grok API key |
-| `openai sk-xxx` | Set OpenAI API key |
-| `anthropic sk-ant-xxx` | Set Anthropic Claude API key |
-| `files on` / `files off` | Enable / disable file system access |
-| `workspace <path>` | Set the sandbox root for file operations |
-| `mode` | Toggle write mode: CONFIRM ✋ ↔ AUTO ⚡ |
-| `obsidian on` / `obsidian off` | Toggle Obsidian vault sync |
-| `obsidian path <path>` | Set your Obsidian vault path |
-| `obsidian export` | Export today's training data to Obsidian now |
-| `obsidian status` | Show Obsidian sync config |
-| `status` | Show full current config |
-| `clear` | Wipe conversation history |
-| `help` | List all commands |
-| `exit` / `Ctrl+C` | Quit |
-
-> Tip: Paste multi-line prompts freely — the terminal uses `prompt_toolkit` for paste-safe input. Your entire paste lands as one message.
-
-<br>
-
----
-
-## File System Tools
-
-When `files on` is active, the AI has access to these tools:
-
-| Tool | Description |
-|------|-------------|
-| `submit_plan` | AI submits a full build plan before writing anything |
-| `read_file` | Read any file in the workspace |
-| `write_file` | Create or overwrite a file |
-| `list_directory` | List files and folders |
-| `search_files` | Glob pattern search (e.g. `**/*.py`) |
-| `create_directory` | Create a directory tree |
-| `delete_file` | Delete a file |
-
-All file operations are **sandboxed** to the workspace root. Path traversal is structurally blocked at the resolver before any I/O occurs.
-
-**Write modes:**
-- ✋ **CONFIRM** *(default)* — AI shows you the file content and waits for `y/n`
-- ⚡ **AUTO** — Writes execute immediately. Toggle with `mode` in terminal.
-
-<br>
-
----
-
-## Obsidian Live Sync
-
-Turn on Obsidian sync and every exchange is appended to your vault in real time:
-
-- **Live streaming** — each completed exchange appears in `{vault}/Cursiv/YYYY-MM-DD.md` immediately after the AI responds
-- **Training export** — on-demand export of the day's training data as a structured Markdown note with YAML frontmatter (Dataview-compatible), summary table, and blockquote pairs
-- **Auto-detect** — the system scans your Documents, OneDrive, and Desktop for an Obsidian vault (`.obsidian/` folder) automatically
-- Notes include quality scores, model labels, and source metadata for every exchange
-
-In the Gradio UI: check the **Obsidian sync** checkbox → paste vault path → click **Export Now**.
-In the terminal: `obsidian on` → `obsidian path <your-vault-path>`.
-
-<br>
-
----
-
-## Persistent Session Memory
-
-The system logs every exchange to `.cursiv/sessions/YYYY-MM-DD.jsonl` and uses it across restarts:
-
-- On boot, the CLI greets you with a summary of the last session — date, exchange count, last model used, and recent topics
-- The last 4 exchanges are injected into the system prompt so the AI has continuity across restarts
-- Session files are labeled "today (earlier)" vs. the prior date so the AI knows the recency of context
-- No personal data leaves your machine — session logs stay local in `.cursiv/sessions/`
-
-<br>
-
----
-
-## The Nexus Panel
-
-The Nexus (`http://localhost:7861`) is your command center:
-
-- **14-Agent Council** — Assign agents to domains and tasks; assignments inject into the main chat automatically
-- **Yin-Yang Balance** — 7 axes tracked in real time (depth/speed, structure/flow, individual/civilization, and more)
-- **Identity Drift Monitor** — Constitutional guardrails with a 3% abort threshold and verified invariants
-- **Training Dashboard** — View, manage, and export your conversation training dataset
-- **Full Cycle** — Run all 8 JW Architect phases (Energy → Emergency → Grounding → Route → Structure → Connectivity → Future State → Recovery)
-
-<br>
-
----
-
-## System Visualization
-
-Open **`system_vision.html`** in any browser (no server required):
-
-- Animated 3D node graph of the full Cursiv architecture
-- 420 seeded stars with individual twinkle at realistic depth
-- Hexagonal ⬡ core with rotating multi-ring glow
-- Particle trails flowing between nodes with source-node colors
-- Depth-based edge opacity — deeper connections fade gracefully
-- Layered nebula backdrop, per-node pulse animations
-
-<br>
-
----
-
-## Guardian Firewall
-
-Cursiv v3.0 includes a four-layer active defense system wired into both the Gradio front-end and the CLI.
-
-| Layer | What it does |
+| What gets downloaded | Size |
 |---|---|
-| **Robot Language Filter** | Pattern-matched probe detection with pi-squared compounding. Triggers on jailbreaks, system prompt dumps, agent enumeration, credential probing, and prompt injection. |
-| **Council Fragment Mesh** | All 14 council agents run a lightweight security fragment check. Individual scores are sub-threshold; only coordinated multi-pattern probing compounds to matter. |
-| **Adaptive Obfuscation** | On every launch, a 256-bit session token from `os.urandom + PID + time` reshuffles internal route labels. Makes session-to-session log correlation impossible. |
-| **Decoy Agents** | Three isolated fake agents (Meridian, Veil, Cipher) activate only under probing — feeding plausible but deliberately misleading technical information. |
+| Ollama (the AI runtime) | ~90 MB |
+| llama3.1 (the language model) | ~4.7 GB |
 
-When a probe is detected: the skull screen fires before any API call, the message is blocked, and the attempt is logged to `.cursiv/guardian_log.jsonl` with session ID, pattern labels, compound score, and message preview.
+**You can minimise that window — it runs in the background.** On a fast connection it takes about 6 minutes. On a slower one, up to 30. You don't have to wait — Cursiv is already installed and ready to open.
 
-<br>
-
----
-
-## PiForge Vault — Phase Agents
-
-The vault contains 14 living agents seeded across the JW Architect phase cycle. Run **`Import PiForge.bat`** once to seed them from the desktop JSON packets. After seeding:
-
-- Each agent's `knowledge_map` is loaded into the system prompt of every conversation
-- The Nexus panel shows real-time agent status and allows domain/task reassignment
-- Agents can be queried directly through the Oracle routing system
+**System requirements:** Windows 10 or 11 (64-bit) · ~6 GB free disk space · 8 GB RAM minimum
 
 <br>
 
 ---
 
-## Project Structure
+## Getting In
 
-```
-Cursiv-v2.1.5/
-├── cursiv_v215/
-│   ├── ui/
-│   │   ├── chat_app.py        # Gradio main chat (port 7860)
-│   │   ├── chat_cli.py        # Terminal chat (full-screen CLI)
-│   │   ├── nexus_app.py       # Nexus command panel (port 7861)
-│   │   └── app.py             # Dashboard UI (Streamlit, port 8501)
-│   ├── core/                  # Agent, memory, constitution engine
-│   ├── council/               # 14-agent deliberation system
-│   ├── forge/                 # Training data forge + factory
-│   ├── academy/               # Scoring and LoRA pipeline
-│   ├── dugout/                # Agent vault
-│   ├── guardian/              # System Guardian firewall + obfuscation + decoys
-│   ├── weave/                 # Oracle + transitionary weave
-│   ├── memory/                # Session logger + boot context loader
-│   ├── obsidian/              # Obsidian vault exporter + livestream
-│   └── nexus/                 # Command router
-├── system_vision.html         # ← Open this for the system visualization
-├── START CURSIV SYSTEM.bat    # ← Launch everything at once
-├── Launch Chat CLI.bat        # Terminal chat launcher
-├── Launch Chat.bat            # Gradio web UI launcher
-├── Launch Nexus.bat           # Nexus panel launcher
-├── Import PiForge.bat         # Seed the vault (run once)
-├── Setup and Launch Cursiv.bat
-├── secrets.bat                # YOUR KEYS — create this (git-ignored)
-├── requirements.txt
-└── .gitignore
-```
+Double-click **Cursiv** on your desktop.
+
+**First time:** create a username and password — stored locally, never sent anywhere.
+
+Four screens open:
+
+**1. System Tray** — Cursiv sits in your taskbar. Right-click to stop or restart.
+
+**2. Chat UI** — opens in your browser at `http://localhost:7860`. Upload files, images, paste code.
+
+**3. Nexus Panel** — opens in your browser at `http://localhost:7861`. Agent command centre — 14 AI agents, live status, balance tracking.
+
+**4. Terminal Chat** — a black fullscreen window. This is the main interface. Type anything. Ask it to build things, read your files, write code, plan systems. It works completely offline, right now.
 
 <br>
 
 ---
 
-## Requirements
+## What It Does
 
-```
-Python 3.10+
-gradio >= 4.44.0
-prompt_toolkit >= 3.0.0
-```
+Once you're in the terminal, just talk to it:
 
-Optional:
-- **Ollama** — fully offline operation without API keys (`ollama pull mistral`)
-- **pypdf** — PDF file reading and upload support
-- **streamlit** — Dashboard UI (port 8501)
+- *"Read my project folder and tell me what it does"*
+- *"Write a Python script that does X and save it to Y"*
+- *"Build me a REST API with these endpoints"*
+- *"Look at this error and fix it"*
+- *"Plan out how I'd build a mobile app for Z"*
 
-<br>
+Every answer comes from a council of 14 AI agents that deliberate in parallel before you see a response. The system learns from every conversation and improves its answers over time.
 
----
-
-## Security Model
-
-- All file operations are sandboxed to the configured workspace root using `Path.relative_to()` — path traversal is structurally impossible
-- API keys are read from environment variables only — never logged, stored in history, or sent anywhere except the respective API endpoint
-- `secrets.bat` is explicitly excluded from git via `.gitignore` and will never appear in commits or pushes
-- CONFIRM write mode is the default — no file is ever modified without your explicit `y` approval
-- A hidden developer override command exists in the codebase that disables the Guardian and exposes full system internals for debugging
+No API keys needed. No internet after the initial download. Everything runs on your machine.
 
 <br>
 
 ---
 
-## Offline Mode
+## Optional — Add API Keys for More Power
 
-No API keys? Run fully locally with Ollama:
+Cursiv works offline with llama3.1. If you want larger cloud models, add your keys in the chat interface:
 
-```bash
-# 1. Install Ollama from https://ollama.com
-# 2. Pull the model
-ollama pull mistral
-# 3. Launch the chat — it falls back to Mistral automatically
-```
+- **xAI Grok** — [console.x.ai](https://console.x.ai)
+- **OpenAI GPT-4.1** — [platform.openai.com](https://platform.openai.com)
+- **Anthropic Claude** — [console.anthropic.com](https://console.anthropic.com)
 
-<br>
-
----
-
-## What Can You Do With It?
-
-Talk to the system inside the terminal chat. Ask it to:
-- Read and edit your files, build new apps, write scripts, create plugins
-- Design systems, plan features, reason through architecture decisions
-- Evolve its own agents, update its own codex, extend its own tools
-- Analyze data, generate training sets, score and curate conversation quality
-- Livestream everything to your Obsidian vault as structured knowledge
-
-Test it. Break it. Extend it. Pass it on.
+The system tries Ollama first, always. Cloud models only activate if you ask for them or Ollama is unavailable.
 
 <br>
 
 ---
 
-## License & Copyright
+## Want to Go Deeper?
+
+**[TECH.md](TECH.md)** is for builders and coders — a full technical breakdown of how the system works under the hood: the parallel deliberation engine, the semantic memory architecture, how to train your own LoRA on your own conversations, and how to evolve and extend the agent council. No smoke and mirrors. Real architecture, real code.
+
+<br>
+
+---
+
+## About
+
+Cursiv was designed and built by **Joshua Winkler**. Every part of this system — the council architecture, the deliberation engine, the Guardian firewall, the evolution pipeline, the installer — was conceived, directed, and shaped by Joshua from the ground up.
+
+This project is shared freely with the world. The goal: give anyone with a computer access to a real AI system that runs entirely on their own machine, without subscriptions, without cloud dependency, without giving their data to anyone.
+
+The world's knowledge should not live in one place. It should be distributed — across people, across machines, across homes and workshops and schools — so that no single failure can take it all down at once.
+
+Take it. Use it. Build on it. Train it on your own voice. Make it yours.
+
+<br>
+
+---
+
+## License
 
 Copyright © 2026 Joshua Winkler. All rights reserved.
 
-This software is released under the MIT License. See [LICENSE](LICENSE) for full terms.
+Released under the MIT License — you are free to use, modify, and distribute this software. See [LICENSE](LICENSE) for full terms.
 
-<br>
-
----
-
-*Built by Joshua Winkler · Cursiv v3.0*
+*Cursiv v3.14 — Ollama Ready Offline Edition · Built by Joshua Winkler*

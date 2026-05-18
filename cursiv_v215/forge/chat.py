@@ -17,7 +17,7 @@ from ..core.agent import CursivAgent
 from ..core.memory import get_memory
 from ..council.deliberation import CouncilDeliberation
 from ..dugout.vault import AgentVault
-from .router import OracleRouter
+from .router import OracleRouter, default_router
 
 
 class AgentChat:
@@ -27,7 +27,7 @@ class AgentChat:
         vault: AgentVault | None = None,
         use_council: bool = True,
     ) -> None:
-        self._router = router or OracleRouter()
+        self._router = router or default_router()
         self._vault = vault or AgentVault()
         self._memory = get_memory()
         self._council = CouncilDeliberation(self._router.call) if use_council else None

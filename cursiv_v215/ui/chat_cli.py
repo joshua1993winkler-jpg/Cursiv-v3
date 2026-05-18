@@ -40,6 +40,7 @@ sys.path.insert(0, str(_HERE.parent.parent))
 
 from cursiv_v215.ui.chat_app import (
     WRITE_SENTINEL,
+    RATE_SENTINEL,
     ROOT,
     chat,
     execute_tool,
@@ -93,6 +94,56 @@ except Exception:
     def _session_append_cli(u, a, m="unknown"): pass
     def _session_boot_summary():                return {}
 
+# ── Codex Agent — offline-capable coding specialist ──────────────────────
+try:
+    from cursiv_v215.agents.codex_agent import (
+        generate     as _codex_gen_cli,
+        is_available as _codex_avail_cli,
+    )
+    _CODEX_CLI_OK = True
+except Exception:
+    _CODEX_CLI_OK = False
+    def _codex_gen_cli(p: str) -> str: return ""
+    def _codex_avail_cli() -> bool:    return False
+
+# ── Hermes Agent — offline multi-step tool executor ───────────────────────
+try:
+    from cursiv_v215.agents.hermes_agent import (
+        run          as _hermes_run_cli,
+        is_available as _hermes_avail_cli,
+    )
+    _HERMES_CLI_OK = True
+except Exception:
+    _HERMES_CLI_OK = False
+    def _hermes_run_cli(p: str) -> str: return ""
+    def _hermes_avail_cli() -> bool:    return False
+
+# ── Reference Brain — offline SQLite knowledge ────────────────────────────
+try:
+    from cursiv_v215.agents.reference_brain import (
+        answer       as _ref_answer_cli,
+        is_available as _ref_avail_cli,
+    )
+    _REF_CLI_OK = True
+except Exception:
+    _REF_CLI_OK = False
+    def _ref_answer_cli(q: str) -> str: return ""
+    def _ref_avail_cli() -> bool:       return False
+
+# ── Offline Queue ──────────────────────────────────────────────────────────
+try:
+    from cursiv_v215.agents.offline_queue import (
+        enqueue      as _queue_enqueue_cli,
+        format_queue as _queue_format_cli,
+        count        as _queue_count_cli,
+    )
+    _QUEUE_CLI_OK = True
+except Exception:
+    _QUEUE_CLI_OK = False
+    def _queue_enqueue_cli(p: str, **kw) -> dict: return {}
+    def _queue_format_cli() -> str:               return ""
+    def _queue_count_cli() -> int:                return 0
+
 # ── System Guardian — back-end CLI defense layer ────────────────────────────
 try:
     from cursiv_v215.guardian.temple_guardian import scan_cli as _guardian_scan_cli
@@ -104,6 +155,17 @@ except Exception:
     def _sfp():                             return "--------"
 
 _CLI_SESSION_ID = f"cli_{os.getpid()}"
+
+# ── Rate limiter + scan display ────────────────────────────────────────────
+try:
+    from cursiv_v215.core.rate_limiter import limiter as _cli_limiter
+    from cursiv_v215.core.scan_display import ScanDisplay as _CLI_ScanDisplay
+    _cli_scan = _CLI_ScanDisplay(_cli_limiter)
+    _RATE_CLI_OK = True
+except Exception:
+    _cli_limiter  = None
+    _cli_scan     = None
+    _RATE_CLI_OK  = False
 
 # ── prompt_toolkit for paste-safe input + wide-char width ──────────────────
 # paste-safe: bracketed paste mode so the whole paste lands as one message.
@@ -129,17 +191,25 @@ if os.name == "nt":
         os.system("color")
 
 # ── Palette ────────────────────────────────────────────────────────────────
-GOLD  = "\033[38;5;220m"
-LGOLD = "\033[38;5;179m"
-LAPIS = "\033[38;5;68m"
-CREAM = "\033[38;5;230m"
-DIM   = "\033[2m"
-RED   = "\033[38;5;196m"
-GREEN = "\033[38;5;82m"
-BOLD  = "\033[1m"
-RESET = "\033[0m"
+# ── Sacred Palette — Egyptian Temple ─────────────────────────────────────
+GOLD   = "\033[38;5;220m"   # Egyptian gold — AI prefix, icons, accents
+LGOLD  = "\033[38;5;136m"   # Deep antique gold — borders, frames
+SILVER = "\033[38;5;253m"   # Bright silver — user text
+SILV2  = "\033[38;5;245m"   # Dim silver — secondary labels, hints
+LAPIS  = "\033[38;5;27m"    # Lapis lazuli — user indicator, input box
+LAPIS2 = "\033[38;5;69m"    # Light lapis — highlights
+CREAM  = "\033[38;5;230m"   # Ivory cream — AI response body
+DIM    = "\033[2m"
+RED    = "\033[38;5;196m"
+GREEN  = "\033[38;5;82m"
+BOLD   = "\033[1m"
+RESET  = "\033[0m"
 
 _ANSI = re.compile(r"\033\[[0-9;]*[mABCDEFGHJKST]")
+
+# ── Layout ──────────────────────────────────────────────────────────────────
+_HEADER_ROWS = 6    # rows the fixed header occupies (5 box lines + 1 blank)
+_layout_on   = False  # True once scroll-region layout is active
 
 
 def _vlen(s: str) -> int:
@@ -156,8 +226,9 @@ def _cols() -> int:
 
 # ── Box drawing ────────────────────────────────────────────────────────────
 
-def _top(w: int, label: str) -> str:
-    # avail = space for bars only: total width minus 2 corners, 2 spaces, label
+def _top(w: int, label: str = "") -> str:
+    if not label:
+        return f"{LGOLD}╔{'═' * (w - 2)}╗{RESET}"
     avail = w - 4 - _vlen(label)
     side  = max(avail // 2, 1)
     extra = "═" if avail % 2 else ""
@@ -179,37 +250,88 @@ def _row(content: str, w: int) -> str:
 
 
 def _sep(w: int) -> str:
-    return f"  {DIM}{'·' * (w - 4)}{RESET}"
+    # Alternating lapis dashes + silver dots — digital-stream divider
+    units  = (w - 4) // 2
+    stream = (f"{LAPIS2}╌{RESET}{SILV2}·{RESET}") * units
+    return f"  {stream}"
 
 
 # ── Status header (printed at startup and when settings change) ────────────
 
-def _print_header(cfg: dict) -> None:
-    w      = _cols()
-    xai_s  = f"{GREEN}xAI:OK{RESET}"     if cfg["api_key"]            else f"{DIM}xAI:--{RESET}"
-    oai_s  = f"{GREEN}OpenAI:OK{RESET}"  if cfg["openai_key"]         else f"{DIM}OpenAI:--{RESET}"
-    ant_s  = f"{GREEN}Claude:OK{RESET}"  if cfg.get("anthropic_key")  else f"{DIM}Claude:--{RESET}"
-    fa_s   = f"{GREEN}files:ON{RESET}"   if cfg["file_access"]        else f"{DIM}files:OFF{RESET}"
-    mode_s = (f"{RED}CONFIRM[!]{RESET}"  if cfg["confirm_mode"] == "confirm"
-              else f"{DIM}AUTO{RESET}")
-    grd_s  = f"{GREEN}Guardian:{_sfp()}{RESET}" if _CLI_GUARDIAN_OK else f"{DIM}Guardian:--{RESET}"
-    obs_s  = (f"{GREEN}Obsidian:ON{RESET}" if cfg.get("obsidian_enabled")
-              else f"{DIM}Obsidian:OFF{RESET}")
-    status = (f"  {xai_s}  {oai_s}  {ant_s}  {fa_s}  "
-              f"mode:{mode_s}  {grd_s}  {obs_s}  {DIM}'help'{RESET}")
-    print(_top(w, "Cursiv v3.0"))
+def _draw_header(cfg: dict) -> None:
+    """Print the 6-row header block (5 box lines + 1 blank). No scroll logic."""
+    w = _cols()
+
+    icons = (
+        f"{GOLD}{BOLD}✦ CURSIV{RESET}  {LGOLD}v3.0{RESET}"
+        f"  {SILV2}·{RESET}  "
+        f"{LAPIS}{BOLD}◈ GUARDIAN{RESET}  {SILV2}·{RESET}  "
+        f"{LAPIS}⬡ COUNCIL ×14{RESET}  {SILV2}·{RESET}  "
+        f"{GOLD}◉ NEXUS{RESET}  {SILV2}·{RESET}  "
+        f"{SILV2}⟳ SOVEREIGN{RESET}"
+    )
+    print(_top(w))
+    print(_row(icons, w))
+    print(_mid(w))
+
+    xai_s  = (f"{GREEN}xAI:OK{RESET}"    if cfg["api_key"]           else f"{SILV2}xAI:--{RESET}")
+    oai_s  = (f"{GREEN}OpenAI:OK{RESET}" if cfg["openai_key"]        else f"{SILV2}OpenAI:--{RESET}")
+    ant_s  = (f"{GREEN}Claude:OK{RESET}" if cfg.get("anthropic_key") else f"{SILV2}Claude:--{RESET}")
+    fa_s   = (f"{GREEN}files:ON{RESET}"  if cfg["file_access"]       else f"{SILV2}files:OFF{RESET}")
+    mode_s = (f"{RED}CONFIRM[!]{RESET}"  if cfg["confirm_mode"] == "confirm" else f"{GREEN}AUTO{RESET}")
+    grd_s  = (f"{LAPIS}Guard:{_sfp()}{RESET}" if _CLI_GUARDIAN_OK   else f"{SILV2}Guard:--{RESET}")
+    obs_s  = (f"{GREEN}Obs:ON{RESET}"    if cfg.get("obsidian_enabled") else f"{SILV2}Obs:OFF{RESET}")
+    status = (
+        f"  {xai_s}  {oai_s}  {ant_s}  {fa_s}  "
+        f"mode:{mode_s}  {grd_s}  {obs_s}  {SILV2}'help'{RESET}"
+    )
     print(_row(status, w))
     print(_bot(w))
-    print()
+    print()   # blank — counts as the 6th fixed row
+
+
+def _update_fixed_header(cfg: dict) -> None:
+    """Repaint the sticky header in-place without disturbing the scroll area."""
+    h = shutil.get_terminal_size((80, 24)).lines
+    # Save cursor · expand to full screen · jump to top-left
+    sys.stdout.write(f"\033[s\033[1;{h}r\033[H")
+    for _ in range(_HEADER_ROWS):
+        sys.stdout.write("\033[2K\n")   # erase line + move down
+    sys.stdout.write("\033[H")          # back to top-left
+    sys.stdout.flush()
+    _draw_header(cfg)
+    # Restore scroll region · restore cursor
+    sys.stdout.write(f"\033[{_HEADER_ROWS + 1};{h}r\033[u")
+    sys.stdout.flush()
+
+
+def _init_layout(cfg: dict) -> None:
+    """
+    Clear screen and paint the header at the top.
+    Does NOT use a scroll region — native terminal scrollback stays intact
+    so the user can freely scroll up through full conversation history.
+    Current status is always visible in the input-box status bar below.
+    """
+    sys.stdout.write("\033[2J\033[H")   # clear screen + home
+    sys.stdout.flush()
+    _draw_header(cfg)
+
+
+def _print_header(cfg: dict) -> None:
+    """Public entry — routes to scroll-region repaint or plain draw."""
+    if _layout_on:
+        _update_fixed_header(cfg)
+    else:
+        _draw_header(cfg)
 
 
 # ── Message printing ───────────────────────────────────────────────────────
 
 def _print_ai_msg(text: str) -> None:
     w      = _cols()
-    wrap_w = max(w - 14, 20)
-    pfx0   = f"  {GOLD}{BOLD}  ✦ AI{RESET}  "
-    pfxN   = "          "
+    wrap_w = max(w - 16, 20)
+    pfx0   = f"  {GOLD}{BOLD}✦{RESET}  {GOLD}CURSIV{RESET}  "
+    pfxN   = "              "
     first  = True
     for para in text.splitlines():
         if not para.strip():
@@ -218,13 +340,13 @@ def _print_ai_msg(text: str) -> None:
             continue
         for seg in textwrap.wrap(para, width=wrap_w) or [""]:
             pfx = pfx0 if first else pfxN
-            print(f"{pfx}{GOLD}{seg}{RESET}")
+            print(f"{pfx}{CREAM}{seg}{RESET}")
             first = False
 
 
 def _print_user_msg(text: str) -> None:
     w = _cols()
-    print(f"\n  {LAPIS}{BOLD}You  ❯{RESET}  {CREAM}{text}{RESET}")
+    print(f"\n  {LAPIS}{BOLD}◆{RESET}  {SILVER}{BOLD}J.WINKLER{RESET}  {GOLD}❯{RESET}  {SILVER}{text}{RESET}")
     print(_sep(w))
     print()
 
@@ -309,18 +431,42 @@ def _input_prompt(cfg: dict) -> str:
     multiline pastes land as a single message rather than firing line-by-line.
     Falls back to plain input() if prompt_toolkit is not installed.
     """
-    w      = _cols()
-    inner  = w - 6
-    mode_s = (f"{RED}CONFIRM[!]{RESET}" if cfg["confirm_mode"] == "confirm"
-              else f"{DIM}AUTO{RESET}")
-    hint   = _pad(f"  mode:{mode_s}  ·  Ctrl+C to exit", inner)
+    w     = _cols()
+    inner = w - 6
 
-    print(f"\n  {LGOLD}╭{'─' * inner}╮{RESET}")
-    print(f"  {LGOLD}│{RESET}{hint}{LGOLD}│{RESET}")
-    print(f"  {LGOLD}├{'─' * inner}┤{RESET}")
+    # Live status — always visible here regardless of scroll position
+    xai_s  = (f"{GREEN}xAI:OK{RESET}"    if cfg.get("api_key")          else f"{SILV2}xAI:--{RESET}")
+    ant_s  = (f"{GREEN}Claude:OK{RESET}" if cfg.get("anthropic_key")    else f"{SILV2}Claude:--{RESET}")
+    fa_s   = (f"{GREEN}files:ON{RESET}"  if cfg.get("file_access")      else f"{SILV2}files:OFF{RESET}")
+    mode_s = (f"{RED}CONFIRM{RESET}"     if cfg["confirm_mode"] == "confirm" else f"{GREEN}AUTO{RESET}")
+    ov_s   = (f"  {LAPIS}⚖OVERSEER{RESET}" if cfg.get("overseer_mode") else "")
 
-    # The prompt prefix printed before the cursor
-    prefix_ansi = f"  {LGOLD}│{RESET}  {LAPIS}{BOLD}❯{RESET}  "
+    tpm_part = ""
+    try:
+        from cursiv_v215.core.rate_limiter import limiter as _rl
+        used    = _rl.current_tpm()
+        target  = _rl.target
+        pct     = min(used / max(target, 1), 1.0)
+        filled  = int(pct * 8)
+        bar     = "█" * filled + "░" * (8 - filled)
+        tpm_col = GREEN if pct < 0.70 else (GOLD if pct < 0.90 else RED)
+        tpm_part = f"  {SILV2}·{RESET}  {tpm_col}{bar}{RESET}  {SILV2}{used // 1000}k/{target // 1000}k{RESET}"
+    except Exception:
+        pass
+
+    hint = _pad(
+        f"  {xai_s}  {ant_s}  {fa_s}  mode:{mode_s}{ov_s}{tpm_part}  {SILV2}·  Ctrl+C{RESET}",
+        inner,
+    )
+
+    print(f"\n  {LAPIS}╭{'─' * inner}╮{RESET}")
+    print(f"  {LAPIS}│{RESET}{hint}{LAPIS}│{RESET}")
+    print(f"  {LAPIS}├{'─' * inner}┤{RESET}")
+
+    # 𓂀 = Eye of Horus (U+13080). Requires a hieroglyphs font (e.g. Noto Sans
+    # Egyptian Hieroglyphs or Segoe UI Historic). Shows as □ if font is absent —
+    # swap to ⊙ in that case.
+    prefix_ansi = f"  {LAPIS}│{RESET}  {GOLD}𓂀{RESET}  "
 
     try:
         if _HAS_PT:
@@ -333,7 +479,7 @@ def _input_prompt(cfg: dict) -> str:
     except (EOFError, KeyboardInterrupt):
         raise KeyboardInterrupt
 
-    print(f"  {LGOLD}╰{'─' * inner}╯{RESET}")
+    print(f"  {LAPIS}╰{'─' * inner}╯{RESET}")
     return raw.strip()
 
 
@@ -385,24 +531,59 @@ _HELP = f"""\
   {LGOLD}files on / off{RESET}            enable / disable file-system access
   {LGOLD}workspace <path>{RESET}          sandbox root for file tools
   {LGOLD}mode{RESET}                      toggle write mode  (auto <-> confirm)
+
+  {GOLD}── Codex Agent (offline code specialist) ───────────────────────{RESET}
+  {LGOLD}codex <prompt>{RESET}            call Codex directly — produces ready-to-run code
+                            works offline, no API key needed
+                            also fires automatically for any code-classified message
+
+  {GOLD}── Model switching ──────────────────────────────────────────────{RESET}
+  {LGOLD}grok{RESET}                      re-run last message with Grok (xAI)
+  {LGOLD}claude{RESET}                    re-run last message with Claude (Anthropic)
+  {LGOLD}overseer on / off{RESET}         Claude reviews every Grok response (weight system)
+                            Grok generates → Claude verifies & critiques
+  {LGOLD}status{RESET}                    shows active model + overseer state
+
+  {GOLD}── Obsidian & system ────────────────────────────────────────────{RESET}
   {LGOLD}obsidian on / off{RESET}         enable / disable Obsidian vault sync
   {LGOLD}obsidian path <vault-path>{RESET}  set Obsidian vault folder
   {LGOLD}obsidian export{RESET}           export today's training data to vault now
   {LGOLD}obsidian status{RESET}           show Obsidian sync config
   {LGOLD}clear{RESET}                     wipe conversation history
-  {LGOLD}status{RESET}                    show current config
   {LGOLD}help{RESET}                      this list
   {LGOLD}exit{RESET}                      quit"""
 
 
 def _status_str(cfg: dict) -> str:
-    ant_label = "Claude (priority)" if cfg.get("anthropic_key") else "not set"
-    oai_label = "set" if cfg["openai_key"] else ("fallback — not set" if not cfg.get("anthropic_key") else "set (overridden by Claude)")
+    ant_label = "set (code tool — fires on file writes)" if cfg.get("anthropic_key") else "not set"
+    oai_label = "set" if cfg["openai_key"] else "not set"
     obs_path  = cfg.get("obsidian_path", "") or "(not set)"
+    codex_label  = "active (offline)" if (_CODEX_CLI_OK and _codex_avail_cli())  else "not found"
+    hermes_label = "active (offline)" if (_HERMES_CLI_OK and _hermes_avail_cli()) else "not found"
+    ref_label    = "active (offline)" if (_REF_CLI_OK and _ref_avail_cli())       else "not found"
+    queue_label  = f"{_queue_count_cli()} task(s) queued" if _QUEUE_CLI_OK        else "not found"
+    # Active model — xAI primary, OpenAI second, Claude code-tool only
+    if cfg.get("api_key"):
+        claude_note = "  [Claude: code tool]" if cfg.get("anthropic_key") else ""
+        active_model = f"Grok-3 (xAI){claude_note}"
+    elif cfg.get("openai_key"):
+        claude_note = "  [Claude: code tool]" if cfg.get("anthropic_key") else ""
+        active_model = f"GPT-4.1 (OpenAI){claude_note}"
+    elif cfg.get("anthropic_key"):
+        active_model = "Claude claude-sonnet-4-6 (no xAI/OpenAI key — last resort)"
+    else:
+        active_model = "Ollama (local)"
+    overseer = "ON  — primary model → Claude reviews" if cfg.get("overseer_mode") else "OFF"
     return (
         f"  xAI key       : {'set' if cfg['api_key']    else 'not set'}\n"
         f"  OpenAI key    : {oai_label}\n"
         f"  Anthropic key : {ant_label}\n"
+        f"  Codex Agent   : {codex_label}\n"
+        f"  Hermes Agent  : {hermes_label}\n"
+        f"  Ref Brain     : {ref_label}\n"
+        f"  Offline Queue : {queue_label}\n"
+        f"  Active model  : {active_model}\n"
+        f"  Overseer mode : {overseer}\n"
         f"  File access   : {'ON'   if cfg['file_access'] else 'OFF'}\n"
         f"  Write mode    : {cfg['confirm_mode'].upper()}\n"
         f"  Workspace     : {cfg['workspace']}\n"
@@ -414,8 +595,21 @@ def _status_str(cfg: dict) -> str:
 # ── Main ───────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    import argparse
+    ap = argparse.ArgumentParser(prog="cursiv", add_help=False)
+    ap.add_argument("path", nargs="?", default="",
+                    help="Open Cursiv with this folder as the workspace root")
+    args, _ = ap.parse_known_args()
+
     _obs_cfg_boot = _obs_load_config()
     _obs_vault_boot = _obs_cfg_boot.get("vault_path", "") or _obs_detect_vault()
+
+    # If a path was passed on the command line, use it as the workspace
+    launch_ws = str(ROOT)
+    if args.path:
+        p = Path(args.path).expanduser().resolve()
+        if p.exists() and p.is_dir():
+            launch_ws = str(p)
 
     cfg: dict = {
         "api_key":          os.environ.get("XAI_API_KEY",       ""),
@@ -423,9 +617,10 @@ def main() -> None:
         "anthropic_key":    os.environ.get("ANTHROPIC_API_KEY", ""),
         "file_access":      False,
         "confirm_mode":     "confirm",
-        "workspace":        str(ROOT),
+        "workspace":        launch_ws,
         "obsidian_enabled": _obs_cfg_boot.get("enabled", False),
         "obsidian_path":    _obs_vault_boot,
+        "overseer_mode":    False,   # Grok generates → Claude reviews
     }
 
     # Auto-fix swapped env-var keys
@@ -439,28 +634,34 @@ def main() -> None:
         cfg["api_key"] = cfg["api_key"] or cfg["openai_key"]
         cfg["openai_key"] = ""
 
-    history: list[dict] = []
+    history:        list[dict] = []
+    last_user_msg:  str       = ""   # used by grok/claude retry commands
 
-    _print_header(cfg)
+    _init_layout(cfg)   # clear screen, paint sticky header, set scroll region
 
     # ── Boot session summary ──────────────────────────────────────────────
     _boot = _session_boot_summary()
     if _boot:
         _label = "earlier today" if _boot.get("is_today") else _boot.get("date", "?")
-        print(f"  {GOLD}Last session ({_label}) — {_boot.get('count', 0)} exchanges  "
-              f"· last model: {_boot.get('last_model', '?')}{RESET}")
+        print(f"  {LGOLD}Last session ({_label}) — {RESET}"
+              f"{SILVER}{_boot.get('count', 0)} exchanges{RESET}  "
+              f"{SILV2}· last model: {GOLD}{_boot.get('last_model', '?')}{RESET}")
         for t in _boot.get("last_topics", [])[-2:]:
-            print(f"  {DIM}  · {t[:90]}{RESET}")
+            print(f"  {SILV2}  · {t[:90]}{RESET}")
         print()
 
     hints = []
     if not cfg["api_key"]:
-        hints.append(f"  No xAI key.    Type:  {LGOLD}key xai-xxxxxxxx{RESET}  (console.x.ai)")
+        hints.append(
+            f"  {SILV2}No xAI key.    Type:  {GOLD}key xai-xxxxxxxx{RESET}  {SILV2}(console.x.ai){RESET}"
+        )
     if not cfg["openai_key"]:
-        hints.append(f"  No OpenAI key. Type:  {LGOLD}openai sk-xxxxxxxx{RESET}  (platform.openai.com)")
-    hints.append(f"  {RED}Write mode: CONFIRM  -- you must approve every file write.{RESET}")
-    hints.append(f"  {DIM}Type 'mode' to switch to AUTO (writes without asking).{RESET}")
-    hints.append(f"  {DIM}Scroll up to read history.  'help' for all commands.{RESET}")
+        hints.append(
+            f"  {SILV2}No OpenAI key. Type:  {GOLD}openai sk-xxxxxxxx{RESET}  {SILV2}(platform.openai.com){RESET}"
+        )
+    hints.append(f"  {RED}Write mode: CONFIRM  — you must approve every file write.{RESET}")
+    hints.append(f"  {SILV2}Type 'mode' to switch to AUTO (writes without asking).{RESET}")
+    hints.append(f"  {SILV2}Scroll up to read history.  'help' for all commands.{RESET}")
     for h in hints:
         print(h)
 
@@ -499,6 +700,66 @@ def main() -> None:
 
         elif cmd == "status":
             print(_status_str(cfg))
+            continue
+
+        elif cmd == "codex" or cmd.startswith("codex "):
+            if not _CODEX_CLI_OK or not _codex_avail_cli():
+                print(f"  {RED}Codex Agent not available.{RESET}  "
+                      f"{DIM}Set CURSIV_CODEX_PATH env var or place Winkler_Codex_AI "
+                      f"as a sibling to Cursiv-v3.{RESET}")
+            else:
+                prompt = raw[6:].strip() if len(raw) > 6 else ""
+                if not prompt:
+                    print(f"  {LGOLD}Usage:{RESET}  {DIM}codex <what to build>{RESET}")
+                else:
+                    print(f"  {LGOLD}[Codex Agent — deliberating…]{RESET}")
+                    result = _codex_gen_cli(prompt)
+                    _print_msg("assistant", result, cfg)
+                    _session_append_cli(prompt, result, "codex_agent")
+            continue
+
+        elif cmd == "hermes" or cmd.startswith("hermes "):
+            if not _HERMES_CLI_OK or not _hermes_avail_cli():
+                print(f"  {RED}Hermes Agent not available.{RESET}  "
+                      f"{DIM}Place hermes-agent as a sibling to Cursiv-v3 and ensure Ollama is running.{RESET}")
+            else:
+                prompt = raw[7:].strip() if len(raw) > 7 else ""
+                if not prompt:
+                    print(f"  {LGOLD}Usage:{RESET}  {DIM}hermes <task to run>{RESET}")
+                else:
+                    print(f"  {LGOLD}[Hermes Agent — running on llama3.1…]{RESET}")
+                    result = _hermes_run_cli(prompt)
+                    _print_msg("assistant", result, cfg)
+                    _session_append_cli(prompt, result, "hermes_agent")
+            continue
+
+        elif cmd == "ref" or cmd.startswith("ref "):
+            if not _REF_CLI_OK or not _ref_avail_cli():
+                print(f"  {RED}Reference Brain not available.{RESET}  "
+                      f"{DIM}Codex system SQLite not found.{RESET}")
+            else:
+                query = raw[4:].strip() if len(raw) > 4 else ""
+                if not query:
+                    print(f"  {LGOLD}Usage:{RESET}  {DIM}ref <what to look up>{RESET}")
+                else:
+                    result = _ref_answer_cli(query)
+                    _print_msg("assistant", result, cfg)
+            continue
+
+        elif cmd == "queue" or cmd.startswith("queue "):
+            if not _QUEUE_CLI_OK:
+                print(f"  {RED}Offline Queue not available.{RESET}")
+            else:
+                parts = raw.split(None, 1)
+                sub   = parts[1].strip() if len(parts) > 1 else ""
+                if not sub or sub == "list":
+                    print(_queue_format_cli())
+                elif sub.startswith("add "):
+                    task = sub[4:].strip()
+                    entry = _queue_enqueue_cli(task)
+                    print(f"  {LGOLD}Queued:{RESET}  {DIM}{entry.get('id','?')} — {task[:60]}{RESET}")
+                else:
+                    print(f"  {LGOLD}Usage:{RESET}  {DIM}queue list  |  queue add <task>{RESET}")
             continue
 
         elif cmd.startswith("key "):
@@ -542,14 +803,118 @@ def main() -> None:
             _print_header(cfg)
             continue
 
-        elif cmd.startswith("workspace "):
-            cfg["workspace"] = raw[10:].strip()
-            print(f"  Workspace → {cfg['workspace']}")
+        elif cmd.startswith("workspace ") or cmd == "workspace":
+            new_ws = raw[10:].strip() if len(raw) > 10 else ""
+            if not new_ws:
+                print(f"  {LGOLD}Workspace:{RESET}  {SILVER}{cfg['workspace']}{RESET}")
+                continue
+            ws_path = Path(new_ws).expanduser().resolve()
+            if not ws_path.exists():
+                print(f"  {RED}Not found:{RESET}  {new_ws}")
+                continue
+            if not ws_path.is_dir():
+                print(f"  {RED}Not a directory:{RESET}  {new_ws}")
+                continue
+            cfg["workspace"] = str(ws_path)
+            print(f"\n  {GOLD}⟳{RESET}  {SILVER}{BOLD}Workspace → {ws_path}{RESET}")
+            # Directory scan
+            try:
+                entries = sorted(ws_path.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
+                dirs  = [e for e in entries if e.is_dir()][:12]
+                files = [e for e in entries if e.is_file()][:12]
+                if dirs:
+                    print(f"  {LAPIS}▸ Folders{RESET}")
+                    for d in dirs:
+                        print(f"      {LAPIS}◆{RESET}  {SILVER}{d.name}{RESET}")
+                if files:
+                    print(f"  {SILV2}▸ Files{RESET}")
+                    for f in files:
+                        size = f.stat().st_size
+                        sz   = f"{size // 1024}kb" if size >= 1024 else f"{size}b"
+                        print(f"      {SILV2}·  {f.name}  {DIM}{sz}{RESET}")
+                if not dirs and not files:
+                    print(f"  {SILV2}(empty){RESET}")
+            except PermissionError:
+                print(f"  {RED}Permission denied{RESET}")
+            print()
             continue
 
         elif cmd in ("files on", "files off"):
             cfg["file_access"] = cmd == "files on"
             print(f"  File access → {'ON' if cfg['file_access'] else 'OFF'}")
+            _print_header(cfg)
+            continue
+
+        # ── Model switching commands ─────────────────────────────────────
+        elif cmd in ("grok", "use grok", "try grok"):
+            if not last_user_msg:
+                print(f"  {SILV2}No previous message to retry with Grok.{RESET}")
+                continue
+            if not cfg.get("api_key"):
+                print(f"  {RED}No xAI key set.  Type:  key xai-xxxxx{RESET}")
+                continue
+            print(f"\n  {GOLD}⟳ Grok re-run{RESET}  {SILV2}· {last_user_msg[:60]}{'...' if len(last_user_msg)>60 else ''}{RESET}")
+            sys.stdout.write(f"  {GOLD}{BOLD}✦{RESET}  {GOLD}GROK{RESET}  ")
+            sys.stdout.flush()
+            grok_resp = ""
+            try:
+                for chunk in chat(
+                    last_user_msg, history[:-1] if history else [],
+                    cfg["api_key"], None, False, cfg["workspace"],
+                    cfg["openai_key"], False, "",
+                    force_provider="grok",
+                ):
+                    sys.stdout.write(f"{GOLD}{chunk}{RESET}")
+                    sys.stdout.flush()
+                    grok_resp += chunk
+            except KeyboardInterrupt:
+                grok_resp = grok_resp or "(interrupted)"
+            print("\n")
+            continue
+
+        elif cmd in ("claude", "use claude", "try claude"):
+            if not last_user_msg:
+                print(f"  {SILV2}No previous message to retry with Claude.{RESET}")
+                continue
+            if not cfg.get("anthropic_key"):
+                print(f"  {RED}No Anthropic key set.  Type:  anthropic sk-ant-xxxxx{RESET}")
+                continue
+            print(f"\n  {LAPIS}⟳ Claude re-run{RESET}  {SILV2}· {last_user_msg[:60]}{'...' if len(last_user_msg)>60 else ''}{RESET}")
+            sys.stdout.write(f"  {GOLD}{BOLD}✦{RESET}  {GOLD}CLAUDE{RESET}  ")
+            sys.stdout.flush()
+            claude_resp = ""
+            try:
+                for chunk in chat(
+                    last_user_msg, history[:-1] if history else [],
+                    "", None, False, cfg["workspace"],
+                    "", False, cfg["anthropic_key"],
+                    force_provider="claude",
+                ):
+                    sys.stdout.write(f"{CREAM}{chunk}{RESET}")
+                    sys.stdout.flush()
+                    claude_resp += chunk
+            except KeyboardInterrupt:
+                claude_resp = claude_resp or "(interrupted)"
+            print("\n")
+            continue
+
+        elif cmd in ("overseer on", "overseer off"):
+            cfg["overseer_mode"] = cmd == "overseer on"
+            state = "ON" if cfg["overseer_mode"] else "OFF"
+            if cfg["overseer_mode"]:
+                has_grok   = bool(cfg.get("api_key") or cfg.get("openai_key"))
+                has_claude = bool(cfg.get("anthropic_key"))
+                if not has_claude:
+                    print(f"  {RED}Overseer needs an Anthropic key for Claude.  Type:  anthropic sk-ant-xxxxx{RESET}")
+                    cfg["overseer_mode"] = False
+                    continue
+                if not has_grok:
+                    print(f"  {RED}Overseer needs a Grok/OpenAI key as the primary model.  Type:  key xai-xxxxx{RESET}")
+                    cfg["overseer_mode"] = False
+                    continue
+                print(f"  {LAPIS}⚖ Overseer mode → ON{RESET}  Grok generates, Claude reviews every response.")
+            else:
+                print(f"  {SILV2}Overseer mode → OFF.  Normal routing restored.{RESET}")
             continue
 
         elif cmd in ("obsidian on", "obsidian off"):
@@ -609,56 +974,123 @@ def main() -> None:
                 continue   # block the message; do not send to API
 
         # ── Send to model ────────────────────────────────────────────────
+        last_user_msg = raw
         history.append({"role": "user", "content": raw})
         _print_user_msg(raw)
 
-        # AI prefix — stream tokens directly below it
-        w     = _cols()
-        pfx0  = f"  {GOLD}{BOLD}  ✦ AI{RESET}  "
-        pfxN  = "          "
-        sys.stdout.write(pfx0)
-        sys.stdout.flush()
-
-        full_response   = ""
+        w             = _cols()
+        full_response = ""
         pending_payload = None
-        line_len        = 0          # visible chars on the current output line
-        wrap_w          = max(w - 14, 20)
-        first_line      = True
 
-        try:
-            for chunk in chat(
-                raw,
-                history[:-1],
-                cfg["api_key"],
-                None,
-                cfg["file_access"],
-                cfg["workspace"],
-                cfg["openai_key"],
-                cfg["confirm_mode"] == "confirm",
-                cfg["anthropic_key"],
-            ):
-                combined = full_response + chunk
-                if WRITE_SENTINEL in combined:
-                    display, raw_json = combined.split(WRITE_SENTINEL, 1)
-                    # Print whatever came before the sentinel
-                    leftover = display[len(full_response):]
-                    if leftover:
-                        sys.stdout.write(f"{GOLD}{leftover}{RESET}")
-                        sys.stdout.flush()
-                    full_response   = display
-                    pending_payload = raw_json
-                    break
+        # ── Overseer mode: primary model → Claude review ─────────────────
+        if (cfg.get("overseer_mode")
+                and cfg.get("anthropic_key")
+                and (cfg.get("api_key") or cfg.get("openai_key"))):
 
-                # Simple direct streaming — terminal wraps naturally
-                sys.stdout.write(f"{GOLD}{chunk}{RESET}")
-                sys.stdout.flush()
-                full_response = combined
+            # Pick primary model: Grok preferred, fall back to OpenAI
+            prim_provider = "grok" if cfg.get("api_key") else "openai"
+            prim_label    = "Grok" if prim_provider == "grok" else "GPT-4.1"
 
-        except KeyboardInterrupt:
-            full_response = full_response or "(interrupted)"
+            # Phase 1 — Primary model generates
+            print(f"  {GOLD}⚖ OVERSEER{RESET}  {SILV2}Phase 1: {prim_label} generating...{RESET}")
+            sys.stdout.write(f"  {GOLD}✦{RESET}  {GOLD}{prim_label.upper()}{RESET}  ")
+            sys.stdout.flush()
+            grok_resp = ""
+            try:
+                for chunk in chat(
+                    raw, history[:-1],
+                    cfg["api_key"], None, cfg["file_access"], cfg["workspace"],
+                    cfg["openai_key"], cfg["confirm_mode"] == "confirm", "",
+                    force_provider=prim_provider,
+                ):
+                    sys.stdout.write(f"{GOLD}{chunk}{RESET}")
+                    sys.stdout.flush()
+                    grok_resp += chunk
+            except KeyboardInterrupt:
+                grok_resp = grok_resp or "(interrupted)"
+            print("\n")
 
-        print()   # newline after streamed response
-        print()
+            # Phase 2 — Claude oversight: verify + critique
+            print(f"  {LAPIS}◈ CLAUDE OVERSIGHT{RESET}  {SILV2}verifying...{RESET}")
+            oversight_q = (
+                f"Query: {raw}\n\n"
+                f"Primary model ({prim_label}) produced:\n"
+                f"{'─' * 50}\n"
+                f"{grok_resp.strip()}\n"
+                f"{'─' * 50}\n\n"
+                "Verify this response. Start your reply with one of:\n"
+                "  ✓ VERIFIED — if accurate and complete\n"
+                "  ◈ IMPROVED — if you have additions/nuance\n"
+                "  ✗ CORRECTED — if there are errors\n\n"
+                "Then give your brief assessment. Corrections take priority."
+            )
+            sys.stdout.write(f"  {LAPIS}│{RESET}  {CREAM}")
+            sys.stdout.flush()
+            oversight_resp = ""
+            try:
+                for chunk in chat(
+                    oversight_q, [],
+                    "", None, False, "",
+                    "", False, cfg["anthropic_key"],
+                    force_provider="claude",
+                ):
+                    sys.stdout.write(f"{CREAM}{chunk}{RESET}")
+                    sys.stdout.flush()
+                    oversight_resp += chunk
+            except KeyboardInterrupt:
+                oversight_resp = oversight_resp or "(interrupted)"
+            print("\n")
+            full_response = (
+                f"[{prim_label}]: {grok_resp.strip()}\n\n"
+                f"[Claude Oversight]: {oversight_resp.strip()}"
+            )
+
+        else:
+            # ── Normal single-model flow ─────────────────────────────────
+            if _cli_scan:
+                provider = (
+                    "xAI"     if cfg.get("api_key")        else
+                    "OpenAI"  if cfg.get("openai_key")     else
+                    "Claude"  if cfg.get("anthropic_key")  else
+                    "Ollama"
+                )
+                _cli_scan.routing(provider)
+
+            sys.stdout.write(f"  {GOLD}{BOLD}✦{RESET}  {GOLD}AI{RESET}  ")
+            sys.stdout.flush()
+
+            try:
+                for chunk in chat(
+                    raw,
+                    history[:-1],
+                    cfg["api_key"],
+                    None,
+                    cfg["file_access"],
+                    cfg["workspace"],
+                    cfg["openai_key"],
+                    cfg["confirm_mode"] == "confirm",
+                    cfg["anthropic_key"],
+                ):
+                    combined = full_response + chunk
+                    if WRITE_SENTINEL in combined:
+                        display, raw_json = combined.split(WRITE_SENTINEL, 1)
+                        leftover = display[len(full_response):]
+                        if leftover:
+                            sys.stdout.write(f"{GOLD}{leftover}{RESET}")
+                            sys.stdout.flush()
+                        full_response   = display
+                        pending_payload = raw_json
+                        break
+
+                    sys.stdout.write(f"{GOLD}{chunk}{RESET}")
+                    sys.stdout.flush()
+                    full_response = combined
+
+            except KeyboardInterrupt:
+                full_response = full_response or "(interrupted)"
+
+            print()   # newline after streamed response
+            print()
 
         # ── Handle pending write ─────────────────────────────────────────
         if pending_payload is not None:

@@ -1,5 +1,45 @@
 # Changelog
 
+## v3.14.0 — Ollama Ready Offline Edition (2026-05-18)
+
+### The offline release. Full local AI. No keys required.
+
+**Ollama integration (offline-first):**
+- Oracle Router now tries Ollama first on every call — cloud models only activate as fallback
+- Fixed system prompt injection into Ollama: system message now passed via dedicated `system` parameter (previously concatenated as a conversation turn, causing identity loss)
+- Streaming NDJSON responses from Ollama — tokens surface as they generate, no more waiting for the full response
+- `num_ctx` tuned to 6144 for chat path — right-sized for system prompt + conversation, not over-allocated
+- Ollama bootstrap installer: `scripts/install_ollama.ps1` runs post-install, downloads Ollama (~90 MB) and pulls llama3.1 (~4.7 GB) in a visible background window
+
+**System prompt:**
+- Condensed `codex/system_prompt.md` from ~12,000 tokens (875 lines) to ~4,400 tokens (329 lines)
+- Every functional instruction preserved: all 14 agent roles, 8-phase cycle, constitutional invariants, EvoCore, routing rules, commands, Guardian triggers
+- Removed: verbose ASCII panels, duplicate command tables, academic knowledge layer paragraph, redundant boot sequence block
+- Net effect: significantly faster Ollama first-token time due to reduced prefill
+
+**Council deliberation:**
+- Parallel deliberation via `concurrent.futures.ThreadPoolExecutor` — 10 internal advisors run simultaneously (Phase 1), 4 synthesizers run simultaneously (Phase 2)
+- Canonical agent ordering restored after `as_completed()` — response order is deterministic regardless of which future finishes first
+- Council memory (`council/council_memory.py`): Jaccard similarity + exponential recency decay (7-day half-life) — system finds similar past deliberations and injects them as prior wisdom
+- Score formula: 0.70 × jaccard + 0.30 × decay · min_score threshold: 0.12 · max entries: 300
+
+**Agents:**
+- Codex auto-intercept removed — Codex no longer hijacks all coding questions
+- Explicit `codex <prompt>` command still works; Codex only fires when Josh invokes it directly
+- Codex agent integrated from Winkler_Codex_AI as offline coding specialist
+
+**Auth & launcher:**
+- Binary-fragment authentication (`core/access_gate.py`) — bcrypt rounds=12, hmac.compare_digest constant-time comparison
+- Launcher robustness improvements
+
+**Installer:**
+- `installer/cursiv_setup.iss` updated to v3.14.0
+- Ollama bootstrap script wired into `[Files]` and `[Run]` sections
+- Post-install launch runs non-blocking (`nowait postinstall skipifsilent runascurrentuser`)
+- Output: `Cursiv-Setup-3.14.exe`
+
+---
+
 ## v2.1.5 — The Sovereign Temple (2026-05-16)
 
 ### Complete reimagination from ground up.

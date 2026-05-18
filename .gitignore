@@ -3,6 +3,7 @@ secrets.bat
 
 # Python
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *.pyo
 .venv/
@@ -10,6 +11,14 @@ venv/
 *.egg-info/
 dist/
 build/
+
+# Logs
+*.log
+build_lean.log
+cursiv_startup.log
+
+# Installer output — compiled .exe binaries, not source
+installer/Output/
 
 # Cursiv runtime data
 .cursiv/

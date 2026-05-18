@@ -17,7 +17,7 @@ from ..academy.scorer import format_scorecard, score_agent
 from ..core.agent import AgentState, CursivAgent
 from ..core.strand import encode, strand_summary
 from ..dugout.vault import AgentVault
-from .router import OracleRouter
+from .router import OracleRouter, default_router
 
 
 class AgentFactory:
@@ -26,7 +26,7 @@ class AgentFactory:
         router: OracleRouter | None = None,
         vault: AgentVault | None = None,
     ) -> None:
-        self._router = router or OracleRouter()
+        self._router = router or default_router()
         self._vault = vault or AgentVault()
         self._academy = AcademyEngine(self._router.call)
 

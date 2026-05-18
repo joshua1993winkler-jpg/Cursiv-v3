@@ -1,0 +1,99 @@
+; ============================================================
+; Cursiv v3.14 — Ollama Ready Offline Edition
+; Produces: installer\Output\Cursiv-Setup-3.14.exe
+;
+; Offline-first AI workspace. Runs without internet after install.
+; Ollama + llama3.1 downloaded post-install (~4.7 GB, one time).
+;
+; Compile: iscc installer\cursiv_setup.iss
+;          (or run scripts\package.bat)
+; ============================================================
+
+#define AppName      "Cursiv"
+#define AppVer       "3.14.0"
+#define AppPublisher "Joshua Winkler"
+#define AppURL       "https://github.com/joshua1993winkler-jpg/Cursiv-v3"
+#define AppExe       "Cursiv.exe"
+#define AppID        "{{A7B1C2D3-E4F5-4A6B-9C7D-8E0F1A2B3C4D}}"
+
+[Setup]
+AppId={#AppID}
+AppName={#AppName}
+AppVersion={#AppVer}
+AppVerName={#AppName} {#AppVer}
+AppPublisher={#AppPublisher}
+AppPublisherURL={#AppURL}
+AppSupportURL={#AppURL}
+AppUpdatesURL={#AppURL}
+DefaultDirName={autopf}\{#AppName}
+DefaultGroupName={#AppName}
+AllowNoIcons=yes
+LicenseFile=..\LICENSE
+InfoAfterFile=..\CHANGELOG.md
+AppComments=Offline AI workspace. Runs llama3.1 locally via Ollama. No internet required after install. Your data never leaves your machine.
+OutputDir=Output
+OutputBaseFilename=Cursiv-Setup-3.14
+SetupIconFile=..\launcher\resources\icons\cursiv.ico
+WizardSmallImageFile=..\launcher\resources\icons\cursiv_256.png
+Compression=lzma2/ultra64
+SolidCompression=yes
+WizardStyle=modern
+PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=dialog
+ArchitecturesInstallIn64BitMode=x64compatible
+UninstallDisplayIcon={app}\{#AppExe}
+
+[Languages]
+Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Tasks]
+Name: "desktopicon";     Description: "{cm:CreateDesktopIcon}";      GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "autostart";       Description: "Start Cursiv when Windows starts"; GroupDescription: "Startup:"; Flags: unchecked
+
+[Files]
+; Main application (one-dir PyInstaller bundle)
+Source: "..\dist\Cursiv\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+; Ollama bootstrap — downloads and installs Ollama + llama3.1 post-install
+Source: "..\scripts\install_ollama.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
+
+[Icons]
+; Start Menu
+Name: "{group}\{#AppName}";            Filename: "{app}\{#AppExe}"; IconFilename: "{app}\{#AppExe}"
+Name: "{group}\Uninstall {#AppName}";  Filename: "{uninstallexe}"
+
+; Desktop shortcut (optional task)
+Name: "{autodesktop}\{#AppName}";      Filename: "{app}\{#AppExe}"; Tasks: desktopicon
+
+[Registry]
+; Autostart (optional task) — HKCU so no admin needed
+Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; \
+  ValueType: string; ValueName: "{#AppName}"; \
+  ValueData: """{app}\{#AppExe}"" --tray"; \
+  Flags: uninsdeletevalue; Tasks: autostart
+
+[Run]
+; AI engine bootstrap — downloads Ollama (latest) and pulls llama3.1 (~4.7 GB) in a visible window
+; Runs non-blocking so the installer finishes immediately; user can minimise and wait
+Filename: "powershell.exe"; \
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File ""{app}\scripts\install_ollama.ps1"""; \
+  Description: "Set up local AI engine (Ollama + llama3.1 model — ~4.7 GB download)"; \
+  Flags: nowait postinstall skipifsilent runascurrentuser
+
+; Launch after install
+Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; \
+  Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+; Kill running instance before uninstall
+Filename: "taskkill"; Parameters: "/f /im {#AppExe}"; \
+  Flags: runhidden; RunOnceId: "KillCursiv"
+
+[Code]
+// Show a friendly page at the end of install
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssDone then begin
+    // nothing extra needed — Run section handles launch
+  end;
+end;

@@ -44,6 +44,64 @@ PROTECTED_PATHS: frozenset[str] = frozenset([
     "secrets.bat",
 ])
 
+# ── Slot 5 — Fairness constraints (Barocas, Hardt, Narayanan — Fairness and ML) ──
+# Five additive, testable rules that run alongside the existing guardian logic.
+# Each names the source chapter, the rule, and which existing phase it augments.
+_FAIRNESS_CONSTRAINTS: list[dict] = [
+    {
+        "rule": (
+            "If any output contains ranking, classification, recommendation, or allocation "
+            "decisions that can be disaggregated by demographic or protected attributes (even "
+            "when inferred from context or proxies), the positive-outcome rate for each group "
+            "must differ by no more than a pre-specified tolerance (default 0.05) or the "
+            "disparity must be explicitly flagged with a mitigation note."
+        ),
+        "source": "Barocas, Hardt, Narayanan — Fairness and Machine Learning, ch. on classification",
+        "applies_to": "Structure phase and Builder agent",
+    },
+    {
+        "rule": (
+            "For any predictive or evaluative claim about individuals or subgroups, the "
+            "true-positive rate and false-positive rate must be approximately equal across "
+            "groups that differ on sensitive attributes; violation requires the Lens agent to "
+            "surface the unequal error rates before the synthesis is released."
+        ),
+        "source": "Barocas et al. — ch. on separation / equalized odds",
+        "applies_to": "Lens agent and codex_v2_regulation_layer",
+    },
+    {
+        "rule": (
+            "When the system produces probabilistic statements or scores that will be treated "
+            "as confidences by downstream humans or agents, those scores must be calibrated "
+            "within each relevant group (predicted probability ≈ observed frequency conditional "
+            "on group); miscalibration by group triggers an immediate Balance-axis correction."
+        ),
+        "source": "Barocas et al. — ch. on sufficiency / calibration",
+        "applies_to": "Pulse and Balance agents",
+    },
+    {
+        "rule": (
+            "Any two individuals or situations that are similar on all non-sensitive attributes "
+            "the system has deemed decision-relevant must receive similar outputs; the system "
+            "must be able to exhibit a small perturbation test showing that flipping only the "
+            "sensitive attribute does not materially change the recommendation."
+        ),
+        "source": "Barocas et al. — ch. on individual fairness and consistency",
+        "applies_to": "Shield agent",
+    },
+    {
+        "rule": (
+            "For any historical or longitudinal recommendation, the system must verify that the "
+            "proposed action does not reproduce or amplify historical bias patterns documented "
+            "in the user's own past data or in the relevant civilizational corpus; if such "
+            "reproduction is detected, the output is routed through Recovery with an explicit "
+            "'historical bias echo' label."
+        ),
+        "source": "Barocas et al. — ch. on causal and counterfactual fairness",
+        "applies_to": "Echo agent and winkler_recovery_model",
+    },
+]
+
 
 # ── Robot Language Filter patterns ───────────────────────────────────────────
 # Each entry: (compiled pattern, weight 0.0–1.0, label)

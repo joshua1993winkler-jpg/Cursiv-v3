@@ -21,6 +21,17 @@ from typing import Generator
 
 import gradio as gr
 
+# ── Token rate limiter + scan display ──────────────────────────────────────
+try:
+    from cursiv_v215.core.rate_limiter import limiter as _rate_limiter
+    from cursiv_v215.core.scan_display import ScanDisplay as _ScanDisplay
+    _scan = _ScanDisplay(_rate_limiter)
+    _RATE_OK = True
+except Exception:
+    _rate_limiter = None
+    _scan         = None
+    _RATE_OK      = False
+
 # ── System Guardian — front-end defense layer ──────────────────────────────
 try:
     from cursiv_v215.guardian.temple_guardian import (
@@ -46,6 +57,66 @@ _CLI_SESSION_ID    = f"cli_{os.getpid()}"    # mirrors chat_cli.py
 def _owner_active() -> bool:
     """True if owner is verified in any session (Gradio or CLI)."""
     return _is_owner_session(_GRADIO_SESSION_ID) or _is_owner_session(_CLI_SESSION_ID)
+
+# ── Codex Agent — offline-capable coding specialist ──────────────────────
+try:
+    from cursiv_v215.agents.codex_agent import (
+        generate     as _codex_generate,
+        is_available as _codex_available,
+        status       as _codex_status,
+    )
+    _CODEX_OK = True
+except Exception:
+    _CODEX_OK = False
+    def _codex_generate(p: str) -> str:    return ""
+    def _codex_available() -> bool:        return False
+    def _codex_status() -> dict:           return {"available": False}
+
+# ── Hermes Agent — offline multi-step tool executor ───────────────────────
+try:
+    from cursiv_v215.agents.hermes_agent import (
+        run          as _hermes_run,
+        is_available as _hermes_available,
+        status       as _hermes_status,
+    )
+    _HERMES_OK = True
+except Exception:
+    _HERMES_OK = False
+    def _hermes_run(p: str) -> str:        return ""
+    def _hermes_available() -> bool:       return False
+    def _hermes_status() -> dict:          return {"available": False}
+
+# ── Reference Brain — offline SQLite knowledge base ───────────────────────
+try:
+    from cursiv_v215.agents.reference_brain import (
+        search       as _ref_search,
+        answer       as _ref_answer,
+        is_available as _ref_available,
+        status       as _ref_status,
+    )
+    _REF_OK = True
+except Exception:
+    _REF_OK = False
+    def _ref_search(q: str, limit: int = 6) -> str: return ""
+    def _ref_answer(q: str) -> str:                 return ""
+    def _ref_available() -> bool:                   return False
+    def _ref_status() -> dict:                      return {"available": False}
+
+# ── Offline Queue — capture tasks for later ───────────────────────────────
+try:
+    from cursiv_v215.agents.offline_queue import (
+        enqueue      as _queue_enqueue,
+        format_queue as _queue_format,
+        count        as _queue_count,
+        flush        as _queue_flush,
+    )
+    _QUEUE_OK = True
+except Exception:
+    _QUEUE_OK = False
+    def _queue_enqueue(p: str, **kw) -> dict:  return {}
+    def _queue_format() -> str:                return ""
+    def _queue_count() -> int:                 return 0
+    def _queue_flush(fn) -> list:              return []
 
 # ── Obsidian Vault Sync ────────────────────────────────────────────────────
 try:
@@ -112,7 +183,7 @@ XAI_URL        = "https://api.x.ai/v1/chat/completions"
 XAI_MODEL      = "grok-3-latest"
 XAI_MODEL_VIS  = "grok-2-vision-1212"   # vision-capable model for images
 OLLAMA_URL         = "http://localhost:11434/api/generate"
-OLLAMA_MODEL       = "mistral"
+OLLAMA_MODEL       = "llama3.1"
 
 # ── OpenAI endpoint (Codex / code review) ──────────────────────────────────
 OPENAI_URL         = "https://api.openai.com/v1/chat/completions"
@@ -125,6 +196,8 @@ ANTHROPIC_CODE_MODEL  = "claude-sonnet-4-6"   # code generation via Anthropic
 
 # Sentinel that signals a write is pending user approval
 WRITE_SENTINEL = "<<<PENDING_WRITE_JSON>>>"
+# Sentinel yielded by a provider when its 429 retries are exhausted — triggers fallback
+RATE_SENTINEL  = "<<<RATE_LIMIT_EXHAUSTED>>>"
 
 # ── File tool definitions (xAI / OpenAI tool-call schema) ─────────────────
 FILE_TOOLS = [
@@ -236,6 +309,106 @@ FILE_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "codex_generate",
+            "description": (
+                "Call the Winkler Codex AI to generate production-ready code or Cursiv agent packs. "
+                "Use this when you need to write code — it produces a structured artifact with "
+                "READY-TO-RUN CODE and JSON FILES in Joshua's exact style. "
+                "Works offline. Call this before write_file for any non-trivial code."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "Describe what to build or generate. Be specific.",
+                    },
+                },
+                "required": ["prompt"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "hermes_task",
+            "description": (
+                "Delegate a multi-step agentic task to the Hermes Agent running on Ollama (llama3.1). "
+                "Use for: terminal commands, complex file operations, multi-step workflows, "
+                "anything that needs a tool-calling loop. Works fully offline."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "The task to delegate. Be specific about what you need done.",
+                    },
+                },
+                "required": ["prompt"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "reference_brain",
+            "description": (
+                "Search the local offline knowledge base (382MB SQLite). "
+                "Covers: Webster dictionary definitions, thesaurus, survival field knowledge, "
+                "medical field notes, science and factbook data. "
+                "No model or internet needed — always available offline."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "What to look up. Works for definitions, medical, survival, science.",
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["search", "answer"],
+                        "description": "search = raw hits, answer = grounded full answer with intent classification.",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "offline_queue",
+            "description": (
+                "Manage the offline task queue. Use action='add' to save a cloud-dependent task "
+                "for later. Use action='list' to see what's queued. Use action='flush' to fire "
+                "all queued tasks now (requires connection)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["add", "list", "flush"],
+                        "description": "What to do with the queue.",
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "The task to queue (required for action='add').",
+                    },
+                    "tags": {
+                        "type": "string",
+                        "description": "Comma-separated tags for the queued task (optional).",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
 ]
 
 # Anthropic tool format (same tools, different schema wrapper)
@@ -273,6 +446,8 @@ def execute_tool(name: str, args: dict, root: Path) -> str:
 
     if name == "read_file":
         raw_path = args.get("path", "")
+        if _scan:
+            _scan.file_scan(raw_path)
         # Block credential files — keys must never be exposed via tool reads
         for blocked in _BLOCKED_READ_PATHS:
             if blocked.replace("\\", "/") in raw_path.replace("\\", "/"):
@@ -308,6 +483,8 @@ def execute_tool(name: str, args: dict, root: Path) -> str:
             return f"Error writing {path}: {e}"
 
     elif name == "list_directory":
+        if _scan:
+            _scan.dir_scan(args.get("path", ".") or ".")
         raw  = args.get("path", ".")
         path = _resolve_path(raw, root) if raw and raw != "." else root
         if not path:
@@ -326,6 +503,8 @@ def execute_tool(name: str, args: dict, root: Path) -> str:
             return f"Error listing {path}: {e}"
 
     elif name == "search_files":
+        if _scan:
+            _scan.dir_scan(args.get("directory", ".") or ".")
         pattern   = args.get("pattern", "*")
         dir_raw   = args.get("directory", ".")
         base      = _resolve_path(dir_raw, root) if dir_raw and dir_raw != "." else root
@@ -374,6 +553,46 @@ def execute_tool(name: str, args: dict, root: Path) -> str:
         if not plan:
             return "Plan acknowledged (empty). Please provide a detailed plan next time."
         return f"Plan accepted:\n{plan}\n\nProceed with implementation."
+
+    elif name == "codex_generate":
+        prompt = args.get("prompt", "").strip()
+        if not prompt:
+            return "Error: codex_generate requires a 'prompt' argument."
+        if not _CODEX_OK or not _codex_available():
+            return "[Codex Agent not available — generate the code directly instead.]"
+        return _codex_generate(prompt)
+
+    elif name == "hermes_task":
+        prompt = args.get("prompt", "").strip()
+        if not prompt:
+            return "Error: hermes_task requires a 'prompt' argument."
+        if not _HERMES_OK or not _hermes_available():
+            return "[Hermes Agent not available — ensure hermes-agent is a sibling directory to Cursiv-v3 and Ollama is running.]"
+        return _hermes_run(prompt)
+
+    elif name == "reference_brain":
+        query = args.get("query", "").strip()
+        if not query:
+            return "Error: reference_brain requires a 'query' argument."
+        if not _REF_OK or not _ref_available():
+            return "[Reference Brain not available — Codex system SQLite not found.]"
+        mode = args.get("mode", "search")
+        return _ref_answer(query) if mode == "answer" else _ref_search(query)
+
+    elif name == "offline_queue":
+        action = args.get("action", "list")
+        if action == "add":
+            prompt = args.get("prompt", "").strip()
+            if not prompt:
+                return "Error: offline_queue add requires a 'prompt'."
+            tags = [t.strip() for t in args.get("tags", "").split(",") if t.strip()]
+            entry = _queue_enqueue(prompt, tags=tags)
+            return f"Queued: {entry['id']} — '{prompt[:60]}'"
+        elif action == "flush":
+            results = _queue_flush(lambda p: "[flush requires active connection]")
+            return f"Flushed {len(results)} task(s)." if results else "Queue empty."
+        else:
+            return _queue_format()
 
     return f"Unknown tool: {name}"
 
@@ -817,22 +1036,39 @@ def process_uploaded_files(files: list | None) -> tuple[str, list[dict]]:
 # ── LLM callers ───────────────────────────────────────────────────────────
 
 def _call_ollama(messages: list[dict], max_tokens: int = 1200) -> Generator[str, None, None]:
-    """Stream from local Ollama."""
+    """Stream from local Ollama with full system prompt injection."""
     import json as _json
-    prompt = "\n".join(
-        f"{'Human' if m['role']=='user' else 'Assistant'}: {m['content']}"
+
+    # Separate system instructions from conversation turns.
+    # Ollama's /api/generate accepts a dedicated `system` field — using it
+    # properly grounds the model in the Cursiv identity and capabilities.
+    system_parts = [
+        m["content"] for m in messages
+        if m.get("role") == "system" and isinstance(m.get("content"), str)
+    ]
+    system_str = "\n\n".join(system_parts)
+
+    # Build conversation prompt from user/assistant turns only.
+    turns = "\n".join(
+        f"{'Human' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
         for m in messages
-        if isinstance(m.get("content"), str)
+        if m.get("role") in ("user", "assistant") and isinstance(m.get("content"), str)
     )
+
     payload = json.dumps({
         "model": OLLAMA_MODEL,
-        "prompt": prompt,
+        "system": system_str,
+        "prompt": turns,
         "stream": True,
+        "options": {
+            "num_predict": max_tokens,
+            "num_ctx": 6144,
+        },
     }).encode()
     try:
         req = urllib.request.Request(OLLAMA_URL, data=payload,
                                      headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=120) as resp:
             for line in resp:
                 chunk = _json.loads(line.decode())
                 token = chunk.get("response", "")
@@ -883,10 +1119,9 @@ def _call_xai_stream(
                     except Exception:
                         pass
     except urllib.error.HTTPError as e:
-        body = e.read().decode(errors="ignore")
-        yield f"\n[xAI API error {e.code}: {body[:200]}]"
+        yield RATE_SENTINEL
     except Exception as e:
-        yield f"\n[xAI connection error: {e}]"
+        yield RATE_SENTINEL
 
 
 def _call_xai_non_stream(messages: list[dict], api_key: str, has_images: bool) -> str:
@@ -1052,7 +1287,12 @@ def _call_claude_with_tools(
             "messages":   loop_msgs,
         }).encode()
 
-        for attempt in range(2):   # retry once on 429
+        # Pre-call rate gate: wait if we're near the 20k TPM ceiling
+        if _rate_limiter:
+            est = _rate_limiter.estimate_tokens(payload.decode(errors="ignore"))
+            _rate_limiter.wait_if_needed(est)
+
+        for attempt in range(3):
             try:
                 req = urllib.request.Request(
                     ANTHROPIC_URL, data=payload,
@@ -1064,12 +1304,19 @@ def _call_claude_with_tools(
                 )
                 with urllib.request.urlopen(req, timeout=120) as resp:
                     data = json.loads(resp.read().decode())
+                # Record actual tokens used so the window stays accurate
+                if _rate_limiter:
+                    usage   = data.get("usage", {})
+                    actual  = usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
+                    if actual:
+                        _rate_limiter.record_actual(actual)
                 break   # success
             except urllib.error.HTTPError as e:
                 body = e.read().decode(errors="ignore")
-                if e.code == 429 and attempt == 0:
-                    yield "\n*[Rate limit — waiting 65 s…]*\n"
-                    _time.sleep(65)
+                if e.code == 429 and attempt < 2:
+                    wait_s = 15 * (attempt + 1)   # 15s, then 30s
+                    yield f"\n*[Rate gate: pacing {wait_s}s — TPM window full]*\n"
+                    _time.sleep(wait_s)
                     continue
                 yield f"\n[Claude error {e.code}: {body[:200]}]"
                 return
@@ -1157,14 +1404,17 @@ def _call_xai_with_tools(
     max_loops: int = 20,
     confirm_writes: bool = False,
     anthropic_key: str = "",
+    endpoint_url: str = "",    # override XAI_URL — allows reuse for OpenAI
+    model_override: str = "",  # override XAI_MODEL
+    provider_name: str = "xAI",
 ) -> Generator[str, None, None]:
     """
-    Agentic file-access loop using xAI/Grok.
-    Used as fallback when no Anthropic key is available.
-    Code generation priority on write_file: Claude (Anthropic) > OpenAI > none.
-    Yields strings — tool events formatted inline, then the final response.
+    Agentic file-access tool loop (OpenAI-compatible API format).
+    Works for xAI/Grok and GPT-4.1 — same wire format, different endpoint/model.
+    Code generation: Claude > OpenAI > none on write_file calls.
     """
-    model     = XAI_MODEL_VIS if has_images else XAI_MODEL
+    url       = endpoint_url or XAI_URL
+    model     = model_override or (XAI_MODEL_VIS if has_images else XAI_MODEL)
     loop_msgs = list(messages)
 
     for _ in range(max_loops):
@@ -1179,7 +1429,7 @@ def _call_xai_with_tools(
         }).encode()
         try:
             req = urllib.request.Request(
-                XAI_URL, data=payload,
+                url, data=payload,
                 headers={"Content-Type":  "application/json",
                          "Authorization": f"Bearer {api_key}"},
             )
@@ -1187,10 +1437,10 @@ def _call_xai_with_tools(
                 data = json.loads(resp.read().decode())
         except urllib.error.HTTPError as e:
             body = e.read().decode(errors="ignore")
-            yield f"\n[xAI error {e.code}: {body[:200]}]"
+            yield f"\n[{provider_name} error {e.code}: {body[:200]}]"
             return
         except Exception as e:
-            yield f"\n[xAI error: {e}]"
+            yield f"\n[{provider_name} error: {e}]"
             return
 
         choice     = data["choices"][0]
@@ -1268,6 +1518,30 @@ def _call_xai_with_tools(
     yield "\n[Max tool iterations reached — stopping.]"
 
 
+def _call_openai_with_tools(
+    messages: list[dict],
+    openai_key: str,
+    root: Path,
+    anthropic_key: str = "",
+    max_tokens: int = 4000,
+    max_loops: int = 20,
+    confirm_writes: bool = False,
+) -> Generator[str, None, None]:
+    """GPT-4.1 tool loop — same OpenAI-compatible format as xAI, different endpoint/model."""
+    yield from _call_xai_with_tools(
+        messages, openai_key, root,
+        openai_key="",
+        has_images=False,
+        max_tokens=max_tokens,
+        max_loops=max_loops,
+        confirm_writes=confirm_writes,
+        anthropic_key=anthropic_key,
+        endpoint_url=OPENAI_URL,
+        model_override=OPENAI_CODE_MODEL,
+        provider_name="OpenAI",
+    )
+
+
 # ── Smart model routing ───────────────────────────────────────────────────
 
 import re as _re
@@ -1320,7 +1594,11 @@ def _call_claude_direct(
         "system":     "\n\n".join(sys_parts),
         "messages":   chat_msgs,
     }).encode()
-    for attempt in range(2):
+    if _rate_limiter:
+        est = _rate_limiter.estimate_tokens(payload.decode(errors="ignore"))
+        _rate_limiter.wait_if_needed(est)
+
+    for attempt in range(3):
         try:
             req = urllib.request.Request(
                 ANTHROPIC_URL, data=payload,
@@ -1332,16 +1610,25 @@ def _call_claude_direct(
             )
             with urllib.request.urlopen(req, timeout=120) as resp:
                 data = json.loads(resp.read().decode())
+            if _rate_limiter:
+                usage  = data.get("usage", {})
+                actual = usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
+                if actual:
+                    _rate_limiter.record_actual(actual)
             content = (data.get("content") or [{}])[0].get("text", "") or ""
             for word in content.split(" "):
                 yield word + " "
             return
         except urllib.error.HTTPError as e:
             body = e.read().decode(errors="ignore")
-            if e.code == 429 and attempt == 0:
-                yield "\n*[Rate limit — waiting 65 s…]*\n"
-                _time.sleep(65)
+            if e.code == 429 and attempt < 2:
+                wait_s = 15 * (attempt + 1)
+                yield f"\n*[Rate gate: pacing {wait_s}s — TPM window full]*\n"
+                _time.sleep(wait_s)
                 continue
+            if e.code == 429:
+                yield RATE_SENTINEL   # signal to chat() to try fallback provider
+                return
             yield f"\n[Claude error {e.code}: {body[:200]}]"
             return
         except Exception as e:
@@ -1389,6 +1676,7 @@ def chat(
     openai_key: str = "",
     confirm_writes: bool = False,
     anthropic_key: str = "",
+    force_provider: str = "",   # "grok" | "claude" | "openai" — bypasses smart routing
 ) -> Generator[str, None, None]:
     """
     Main streaming chat handler.
@@ -1476,41 +1764,124 @@ You are in full autonomous coding mode. Follow this protocol exactly:
 
     messages.append({"role": "user", "content": user_content})
 
+    # Codex Agent is invoked explicitly via the `codex <prompt>` command only.
+    # Auto-intercept is disabled — Ollama handles coding Q&A directly with the
+    # full system prompt injected, which produces better answers than Codex for
+    # conversational coding questions.
+    _fp_early = (force_provider or "").lower().strip()
+
     # ── Smart model routing ─────────────────────────────────────────────
     key = (api_key or "").strip()
     oai = (openai_key or "").strip()
     ant = (anthropic_key or "").strip()
     has_images = len(image_parts) > 0
-    msg_type   = _classify_message(user_text)
+    fp         = (force_provider or "").lower().strip()
 
-    if file_access and ant:
-        # Claude tool-use loop — adopts Cursiv persona, has native tool-calling
-        workspace = (
-            Path(root_path.strip()).expanduser().resolve()
-            if root_path.strip() else ROOT
-        )
-        yield from _call_claude_with_tools(messages, ant, workspace,
+    def _workspace() -> Path:
+        return (Path(root_path.strip()).expanduser().resolve()
+                if root_path.strip() else ROOT)
+
+    # ── Forced provider (grok / claude / openai commands) ───────────────
+    if fp == "grok":
+        if file_access and key:
+            yield from _call_xai_with_tools(messages, key, _workspace(), oai,
+                                             has_images, confirm_writes=confirm_writes,
+                                             anthropic_key="")
+        elif key:
+            yield from _call_xai_stream(messages, key, has_images)
+        else:
+            yield "[No xAI key set — type: key xai-xxxxx]"
+        return
+    elif fp == "claude":
+        if file_access and ant:
+            yield from _call_claude_with_tools(messages, ant, _workspace(),
+                                                confirm_writes=confirm_writes,
+                                                is_owner=_owner_active())
+        elif ant:
+            yield from _call_claude_direct(messages, ant)
+        else:
+            yield "[No Anthropic key set — type: anthropic sk-ant-xxxxx]"
+        return
+    elif fp == "openai":
+        if oai:
+            yield from _call_openai_direct(messages, oai)
+        else:
+            yield "[No OpenAI key set — type: openai sk-xxxxx]"
+        return
+
+    # ── Normal smart routing ─────────────────────────────────────────────
+    # Priority: xAI → OpenAI → Claude (code tool only, not primary conversation)
+    # Claude fires on write_file calls inside the tool loops — never as main router.
+    if file_access and key:
+        # xAI tool loop — Claude/OpenAI enhance code writes internally
+        yield from _call_xai_with_tools(messages, key, _workspace(), oai, has_images,
+                                         confirm_writes=confirm_writes, anthropic_key=ant)
+    elif file_access and oai:
+        # OpenAI tool loop — same format, no xAI key needed
+        yield from _call_openai_with_tools(messages, oai, _workspace(),
+                                            anthropic_key=ant,
+                                            confirm_writes=confirm_writes)
+    elif file_access and ant:
+        # Claude tool loop — last resort when only Anthropic key is set
+        yield from _call_claude_with_tools(messages, ant, _workspace(),
                                             confirm_writes=confirm_writes,
                                             is_owner=_owner_active())
-    elif file_access and key:
-        # Grok tool-use fallback — only when no Anthropic key
-        workspace = (
-            Path(root_path.strip()).expanduser().resolve()
-            if root_path.strip() else ROOT
-        )
-        yield from _call_xai_with_tools(messages, key, workspace, oai, has_images,
-                                         confirm_writes=confirm_writes, anthropic_key=ant)
-    elif ant:
-        # Claude for all conversation — adopts Cursiv persona reliably
-        yield from _call_claude_direct(messages, ant)
-    elif oai:
-        # GPT-4.1 second choice — also adopts personas correctly
-        yield from _call_openai_direct(messages, oai)
     elif key:
-        # Grok fallback — note: Grok resists persona overlays by design
-        yield from _call_xai_stream(messages, key, has_images)
+        # xAI primary — auto-fall through to Ollama on any failure
+        gen   = _call_xai_stream(messages, key, has_images)
+        first = next(gen, None)
+        if first == RATE_SENTINEL or first is None:
+            # xAI failed (no credits, no internet, etc.) — silently switch to Ollama
+            text_messages = [
+                {"role": m["role"],
+                 "content": m["content"] if isinstance(m["content"], str)
+                            else next((p["text"] for p in m["content"] if p["type"]=="text"), "")}
+                for m in messages
+            ]
+            ollama_gen = _call_ollama(text_messages)
+            first_ol   = next(ollama_gen, None)
+            if first_ol is not None:
+                yield "*[xAI unavailable — Ollama]*\n\n"
+                yield first_ol
+                yield from ollama_gen
+            else:
+                yield (
+                    "*[xAI unavailable and Ollama is not running.]*\n\n"
+                    "Start Ollama with `ollama run mistral` for offline use."
+                )
+        else:
+            yield first
+            for chunk in gen:
+                if chunk == RATE_SENTINEL:
+                    break
+                yield chunk
+    elif oai:
+        # OpenAI direct — second choice
+        yield from _call_openai_direct(messages, oai)
+    elif ant:
+        # Claude last resort — auto-fallback to Ollama when rate-limited
+        gen   = _call_claude_direct(messages, ant)
+        first = next(gen, None)
+        if first == RATE_SENTINEL:
+            text_messages = [
+                {"role": m["role"],
+                 "content": m["content"] if isinstance(m["content"], str)
+                            else next((p["text"] for p in m["content"] if p["type"]=="text"), "")}
+                for m in messages
+            ]
+            ollama_gen = _call_ollama(text_messages)
+            first_ol   = next(ollama_gen, None)
+            if first_ol is not None:
+                yield "*[Claude rate limit — Ollama]*\n\n"
+                yield first_ol
+                yield from ollama_gen
+            else:
+                yield "*[Claude rate limit exhausted and Ollama is not running.]*\n"
+        else:
+            if first is not None:
+                yield first
+            yield from gen
     else:
-        # Try Ollama (local); it cannot handle images
         text_messages = [
             {"role": m["role"],
              "content": m["content"] if isinstance(m["content"], str)
@@ -1538,6 +1909,10 @@ def status_bar(api_key: str, openai_key: str = "", anthropic_key: str = "") -> s
     ant_status = f"Claude ✓ ({ANTHROPIC_CODE_MODEL})" if anthropic_key.strip() else "Claude —"
     nexus_ok   = "Nexus LIVE" if NEXUS_STATE.exists() else "Nexus OFFLINE"
     guardian_s = f"Guardian ✓ [{_sfp()}]" if _GUARDIAN_OK else "Guardian —"
+    codex_s    = "Codex ✓" if (_CODEX_OK and _codex_available()) else "Codex —"
+    hermes_s   = "Hermes ✓" if (_HERMES_OK and _hermes_available()) else "Hermes —"
+    ref_s      = "RefBrain ✓" if (_REF_OK and _ref_available()) else "RefBrain —"
+    queue_s    = f"Queue:{_queue_count()}" if _QUEUE_OK else "Queue —"
     ollama_ok  = "Ollama ?"
     try:
         urllib.request.urlopen("http://localhost:11434", timeout=1)
@@ -1548,7 +1923,7 @@ def status_bar(api_key: str, openai_key: str = "", anthropic_key: str = "") -> s
     tc = sum(1 for _ in open(TRAINING_JSONL, encoding="utf-8")) if TRAINING_JSONL.exists() else 0
     return (
         f"Cursiv v3.0  ·  {key_status}  ·  {oai_status}  ·  {ant_status}  ·  "
-        f"{ollama_ok}  ·  {nexus_ok}  ·  {guardian_s}  ·  "
+        f"{ollama_ok}  ·  {codex_s}  ·  {hermes_s}  ·  {ref_s}  ·  {queue_s}  ·  {nexus_ok}  ·  {guardian_s}  ·  "
         f"Vault: {vc} agents  ·  Training: {tc} examples  ·  {datetime.now().strftime('%H:%M')}"
     )
 

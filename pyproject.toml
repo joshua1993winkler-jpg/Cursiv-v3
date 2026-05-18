@@ -22,6 +22,7 @@ xai = []     # No extra deps — uses urllib only
 openai = []  # No extra deps — uses urllib only
 
 [project.scripts]
+cursiv       = "cursiv_v215.ui.chat_cli:main"
 cursiv-forge = "cursiv_v215.forge.factory:main"
 
 [tool.setuptools.packages.find]

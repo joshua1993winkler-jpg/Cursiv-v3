@@ -27,6 +27,77 @@ from . import metrics
 
 log = logging.getLogger("cursiv.engine")
 
+# ── Slot 2 — Recovery model knowledge (Sutton & Barto, Bellemare et al., Murphy) ──
+# These named concepts are referenced by winkler_recovery_model during the
+# Stop → Stabilize → Rebuild → Restore → Self-trust protocol.
+# Each is additive — nothing in the existing protocol is replaced.
+_RECOVERY_CONCEPTS = {
+    "eligibility_trace_consolidation": (
+        "Sutton & Barto, Reinforcement Learning ch. 12 (Eligibility Traces). "
+        "When recovery is triggered, treat the recent interaction history as an eligibility "
+        "trace: only dimensions that participated in the pre-collapse trajectory receive "
+        "reinforcement during stabilization, preventing the model from reinforcing irrelevant "
+        "or post-hoc rationalizations."
+    ),
+    "distributional_return_stability": (
+        "Bellemare, Dabney, Rowland, Distributional Reinforcement Learning — risk measures "
+        "and the Wasserstein metric. The recovery protocol maintains not only the expected "
+        "return of coherence but the full distributional estimate of possible coherence "
+        "trajectories; any proposed stabilization step whose lower tail (CVaR) falls below "
+        "a safety threshold is rejected even if its mean appears acceptable."
+    ),
+    "variational_coherence_inference": (
+        "Murphy, Probabilistic Machine Learning Vol 1 & 2 — variational inference and latent "
+        "variable models. During the 'Rebuild thought organization' phase, perform approximate "
+        "variational inference over a small set of latent state hypotheses rather than "
+        "committing to a single narrative; prefer the simplest explanation consistent with "
+        "observed signals (highest ELBO)."
+    ),
+    "bayesian_self_trust_update": (
+        "Murphy, Probabilistic Machine Learning Vol 1 — Bayesian statistics and conjugate "
+        "updating. Rebuilding self-trust is implemented as sequential Bayesian updating of a "
+        "Beta belief over the agent's own reliability; each verified micro-action increments "
+        "the success count only after external or constitutional confirmation, so confidence "
+        "recovers at a rate proportional to demonstrated calibration rather than elapsed time."
+    ),
+    "bootstrapped_stabilization_n_step": (
+        "Sutton & Barto ch. 7 (n-Step Bootstrapping). The 'Stabilize' step uses n-step "
+        "bootstrapping from the last verified grounded state: intermediate unstable "
+        "observations contribute to the value estimate only to the degree that later verified "
+        "states confirm them, preventing runaway positive feedback from distorted "
+        "self-assessment."
+    ),
+}
+
+# ── Slot 4 — Probabilistic inference patterns (Murphy Vol 1 & 2, Goodfellow ch. 17) ──
+# Three named patterns that augment existing confidence and adaptation logic.
+# Additive — no existing mechanism is replaced.
+_PROBABILISTIC_INFERENCE_PATTERNS = {
+    "variational_inference_posterior_confidence": (
+        "Murphy, Probabilistic Machine Learning Vol 1 (variational inference) & Vol 2 "
+        "(advanced topics). Point-estimate confidence scores in the Route and Structure phases "
+        "are augmented by a variational approximation to the posterior over the latent state "
+        "that generated the user signal; the reported confidence becomes the ELBO rather than "
+        "raw likelihood, automatically widening intervals when the input lies far from the "
+        "training manifold."
+    ),
+    "mcmc_robust_adaptation_sampling": (
+        "Murphy Vol 1 (MCMC) and Goodfellow et al. ch. 17 (Monte Carlo methods). When the "
+        "system detects that the current Yin-Yang axes have crossed an imbalance threshold, "
+        "the adaptation step draws a small number of MCMC samples from the posterior over "
+        "possible re-balancing policies instead of taking a single gradient step; the chosen "
+        "correction is the one with highest expected future calibration under the sampled futures."
+    ),
+    "expectation_propagation_council_handoff": (
+        "Murphy, Probabilistic Machine Learning advanced topics — EP and message passing in "
+        "graphical models. The handoff of internal_perspectives to the synthesizing agents is "
+        "re-interpreted as expectation propagation: each advising agent passes a "
+        "moment-matched approximate marginal; the synthesizing agents then perform one round "
+        "of message passing, producing calibrated beliefs more stable than independent "
+        "summarization."
+    ),
+}
+
 
 class CycleResult:
     def __init__(self):
