@@ -95,6 +95,15 @@ def is_setup_complete() -> bool:
     return _FLAG_FILE.exists()
 
 
+def reset_credentials() -> None:
+    """Delete all stored credential files, returning the app to first-run state."""
+    for f in (_HASH_FILE, _META_FILE, _FLAG_FILE):
+        try:
+            f.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
 def fragment_status() -> dict[str, bool]:
     """Diagnostic: which credential files are present. No password data exposed."""
     return {

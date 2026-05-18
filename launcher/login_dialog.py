@@ -179,7 +179,38 @@ class LoginDialog(_BaseDialog):
         self._pw.returnPressed.connect(self._submit)
         vlay.addWidget(btn)
 
+        reset_lbl = QLabel('<a href="#" style="color:#666680;text-decoration:none;">Forgot password? Reset account</a>')
+        reset_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        reset_lbl.setOpenExternalLinks(False)
+        reset_lbl.linkActivated.connect(self._reset)
+        vlay.addWidget(reset_lbl)
+
         self._user.setFocus()
+
+    def _reset(self):
+        from PyQt6.QtWidgets import QMessageBox
+        reply = QMessageBox.question(
+            self, "Reset Account",
+            "This will clear your saved credentials.\n"
+            "Your conversation history and settings are not affected.\n\n"
+            "Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            from cursiv_v215.guardian.access_gate import reset_credentials
+            reset_credentials()
+        except Exception as exc:
+            self._status.setText(f"Reset error: {exc}")
+            return
+
+        setup = SetupDialog(self)
+        if setup.exec() and setup.accepted_ok():
+            self._username_result = setup.get_username()
+            self._ok = True
+            self.accept()
 
     def _submit(self):
         username = self._user.text().strip()
