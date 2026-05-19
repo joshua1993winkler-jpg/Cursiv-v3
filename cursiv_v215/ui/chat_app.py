@@ -102,6 +102,18 @@ except Exception:
     def _ref_available() -> bool:                   return False
     def _ref_status() -> dict:                      return {"available": False}
 
+# ── Strand Store — persistent memory retrieval ────────────────────────────
+try:
+    from cursiv_v215.core.strand_store import (
+        search_strands as _strand_search,
+        strand_count   as _strand_count,
+    )
+    _STRAND_APP_OK = True
+except Exception:
+    _STRAND_APP_OK = False
+    def _strand_search(q, **kw): return []  # type: ignore[misc]
+    def _strand_count() -> int:  return 0
+
 # ── Offline Queue — capture tasks for later ───────────────────────────────
 try:
     from cursiv_v215.agents.offline_queue import (
@@ -1002,6 +1014,25 @@ def _compact_system_for_tools(is_owner: bool = False) -> str:
     return base
 
 
+def _build_strand_context(query: str, top_k: int = 2) -> str:
+    """Retrieve relevant Strands and format them for system prompt injection."""
+    if not _STRAND_APP_OK or _strand_count() == 0:
+        return ""
+    try:
+        results = _strand_search(query, top_k=top_k, min_score=0.12)
+        if not results:
+            return ""
+        lines = ["Relevant entries from your personal Strand archive (prior exchanges and insights):"]
+        for s in results:
+            territory = s.get("territory_tag", "general")
+            q_text    = s.get("query", "")[:150]
+            synth     = s.get("synthesis", "")[:350]
+            lines.append(f"\n[{territory}] Prior query: {q_text}\nPrior insight: {synth}")
+        return "\n".join(lines)
+    except Exception:
+        return ""
+
+
 def _build_live_status() -> str:
     """
     Auto-generated capabilities block appended to every system prompt.
@@ -1047,11 +1078,17 @@ def _build_live_status() -> str:
     else:
         tools.append("Web Search: DuckDuckGo worldwide real-time (no key · set BRAVE_API_KEY for better results)")
 
+    # ── Strand memory ─────────────────────────────────────────────────────
+    strand_line = ""
+    if _STRAND_APP_OK:
+        sc = _strand_count()
+        strand_line = f"Strand archive: {sc} strand{'s' if sc != 1 else ''} (personal memory · anchor this · strands search <query>)"
+
     # ── Commands quick-ref ────────────────────────────────────────────────
     commands = (
         "search: <query> · babel <text> · council <question> · "
-        "codex <prompt> · files on/off · workspace <path> · "
-        "forge / council / ref / queue / obsidian / help"
+        "codex <prompt> · anchor this · strands · "
+        "files on/off · workspace <path> · help"
     )
 
     lines = [
@@ -1069,6 +1106,9 @@ def _build_live_status() -> str:
     for t in tools:
         lines.append(f"- {t}")
     lines.append("")
+    if strand_line:
+        lines.append(f"**Memory:** {strand_line}")
+        lines.append("")
     lines.append(f"**Terminal commands:** {commands}")
     lines.append("")
     lines.append(
@@ -2246,6 +2286,16 @@ You are in full autonomous coding mode. Follow this protocol exactly:
             "*(Retrieved in real-time for this query — treat these as current facts)*\n\n"
             + _web_ctx + "\n"
         )
+
+    # Strand memory injection — relevant prior exchanges from the personal archive
+    if len(user_text.strip()) >= 10:
+        _strand_ctx = _build_strand_context(user_text)
+        if _strand_ctx:
+            messages[0]["content"] += (
+                "\n\n## Personal Strand Memory\n"
+                "*(Retrieved from your Strand archive — prior exchanges and anchored insights)*\n\n"
+                + _strand_ctx + "\n"
+            )
 
     # Codex Agent is invoked explicitly via the `codex <prompt>` command only.
     # Auto-intercept is disabled — Ollama handles coding Q&A directly with the

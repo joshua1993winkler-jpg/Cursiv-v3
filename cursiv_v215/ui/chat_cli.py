@@ -850,6 +850,18 @@ def main() -> None:
               f"{SILV2}· last model: {GOLD}{_boot.get('last_model', '?')}{RESET}")
         for t in _boot.get("last_topics", [])[-2:]:
             print(f"  {SILV2}  · {t[:90]}{RESET}")
+
+    # ── Strand archive greeting ───────────────────────────────────────────
+    if _STRAND_OK:
+        _sc = _strand_count()
+        if _sc > 0:
+            _tcounts = _strand_terr_counts()
+            _tline   = "  ".join(f"{t}:{n}" for t, n in _tcounts.items())
+            print(f"  {LGOLD}Strand archive  :{RESET}  "
+                  f"{SILVER}{_sc} strand{'s' if _sc != 1 else ''}{RESET}  "
+                  f"{SILV2}· {_tline}{RESET}")
+
+    if _boot or (_STRAND_OK and _strand_count() > 0):
         print()
 
     hints = []
