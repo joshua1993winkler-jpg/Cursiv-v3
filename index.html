@@ -1197,51 +1197,27 @@ footer {
      SCRIPTS
      ══════════════════════════════════════════════════════════ -->
 <script>
-/* ── Starfield ─────────────────────────────────────────────────── */
+/* ── Starfield — static, drawn once ────────────────────────────── */
 (function(){
   const c = document.getElementById('starfield');
   const x = c.getContext('2d');
-  let S = [];
-
-  function resize(){
-    c.width  = window.innerWidth;
-    c.height = window.innerHeight;
+  c.width  = window.innerWidth;
+  c.height = window.innerHeight;
+  for(let i=0;i<320;i++){
+    const gold = Math.random() > 0.72;
+    const a    = Math.random()*0.45+0.1;
+    x.globalAlpha = a;
+    x.fillStyle   = gold ? '#C9A227' : '#5B9BFF';
+    x.beginPath();
+    x.arc(
+      Math.random()*c.width,
+      Math.random()*c.height,
+      Math.random()*1.3+0.15,
+      0, Math.PI*2
+    );
+    x.fill();
   }
-
-  function seed(){
-    S = [];
-    for(let i=0;i<320;i++){
-      S.push({
-        x:  Math.random()*c.width,
-        y:  Math.random()*c.height,
-        r:  Math.random()*1.3+0.15,
-        a:  Math.random(),
-        da: (Math.random()-.5)*0.005,
-        vy: Math.random()*0.045+0.008,
-        gold: Math.random() > 0.72,
-      });
-    }
-  }
-
-  function draw(){
-    x.clearRect(0,0,c.width,c.height);
-    for(const s of S){
-      s.a += s.da;
-      if(s.a>1||s.a<0) s.da*=-1;
-      s.y += s.vy;
-      if(s.y > c.height){ s.y=0; s.x=Math.random()*c.width; }
-      x.globalAlpha = Math.max(0,Math.min(1, s.a*0.55));
-      x.fillStyle = s.gold ? '#C9A227' : '#5B9BFF';
-      x.beginPath();
-      x.arc(s.x,s.y,s.r,0,Math.PI*2);
-      x.fill();
-    }
-    x.globalAlpha=1;
-    requestAnimationFrame(draw);
-  }
-
-  resize(); seed(); draw();
-  window.addEventListener('resize',()=>{ resize(); seed(); });
+  x.globalAlpha = 1;
 })();
 
 /* ── Scroll reveal ─────────────────────────────────────────────── */
