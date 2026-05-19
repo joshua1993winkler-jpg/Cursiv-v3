@@ -45,6 +45,8 @@ from cursiv_v215.ui.chat_app import (
     ROOT,
     chat,
     execute_tool,
+    _call_group_discovery,
+    _cursiv_encode,
 )
 
 # ── Sovereign verification (hash assembled from 3 modules — no plaintext) ──
@@ -599,6 +601,12 @@ _HELP = f"""\
                             works offline, no API key needed
                             also fires automatically for any code-classified message
 
+  {GOLD}── Group Discovery (multi-provider consensus) ───────────────────{RESET}
+  {LGOLD}council <question>{RESET}        xAI → OpenAI → Claude in sequence, each seeing
+                            prior responses; ends with synthesis + Cursiv binary
+                            snapshot you can paste into Grok on X to decode
+  {LGOLD}hey council <question>{RESET}    same, inline routing prefix
+
   {GOLD}── Model switching ──────────────────────────────────────────────{RESET}
   {LGOLD}grok{RESET}                      re-run last message with Grok (xAI)
   {LGOLD}claude{RESET}                    re-run last message with Claude (Anthropic)
@@ -822,6 +830,33 @@ def main() -> None:
                     result = _hermes_run_cli(prompt)
                     _print_msg("assistant", result, cfg)
                     _session_append_cli(prompt, result, "hermes_agent")
+            continue
+
+        elif cmd == "council" or cmd.startswith("council "):
+            question = raw[8:].strip() if cmd.startswith("council ") else ""
+            if not question:
+                print(f"  {LGOLD}Usage:{RESET}  {DIM}council <your question>{RESET}")
+            else:
+                has_any = cfg.get("api_key") or cfg.get("openai_key") or cfg.get("anthropic_key")
+                if not has_any:
+                    print(f"  {RED}Group Discovery requires at least one API key.{RESET}")
+                else:
+                    print(f"\n  {GOLD}⬡ GROUP DISCOVERY{RESET}  {SILV2}· {question[:60]}{'...' if len(question)>60 else ''}{RESET}")
+                    full = ""
+                    try:
+                        for chunk in _call_group_discovery(
+                            question,
+                            cfg.get("api_key", ""),
+                            cfg.get("openai_key", ""),
+                            cfg.get("anthropic_key", ""),
+                        ):
+                            sys.stdout.write(chunk)
+                            sys.stdout.flush()
+                            full += chunk
+                    except KeyboardInterrupt:
+                        print(f"\n  {DIM}[interrupted]{RESET}")
+                    print()
+                    _session_append_cli(question, full, "group_discovery")
             continue
 
         elif cmd == "ref" or cmd.startswith("ref "):
@@ -1081,8 +1116,9 @@ def main() -> None:
         _force_provider = ""
         _raw_lower = raw.lower()
         for _prefix, _fp in (
-            ("hey grok ",   "grok"),
-            ("hey claude ", "claude"),
+            ("hey council ", "council"),
+            ("hey grok ",    "grok"),
+            ("hey claude ",  "claude"),
             ("hey chat ",   "openai"),
             ("hey openai ", "openai"),
             ("hey gpt ",    "openai"),
