@@ -1782,6 +1782,18 @@ def _call_openai_direct(
         yield f"\n[OpenAI error: {e}]"
 
 
+def _is_online() -> bool:
+    """TCP connect to 8.8.8.8:53 — tests internet without a DNS lookup."""
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(2)
+            s.connect(("8.8.8.8", 53))
+        return True
+    except Exception:
+        return False
+
+
 # ── Core chat function ────────────────────────────────────────────────────
 
 def chat(
@@ -1936,12 +1948,29 @@ You are in full autonomous coding mode. Follow this protocol exactly:
         yield from _call_ollama(text_msgs)
         return
 
+    # ── Offline detection — skip all cloud providers immediately ────────
+    if not _is_online():
+        yield "*[Offline — all cloud providers unreachable. Routing to Ollama (no token limits).]*\n\n"
+        _offline_msgs = [
+            {"role": m["role"],
+             "content": m["content"] if isinstance(m["content"], str)
+                        else next((p["text"] for p in m["content"] if p["type"] == "text"), "")}
+            for m in messages
+        ]
+        yield from _call_ollama(_offline_msgs)
+        return
+
     # ── Smart routing — cascade: xAI → OpenAI → Claude → Ollama ────────
     def _fa_error(chunk: str, provider: str) -> bool:
         if chunk == RATE_SENTINEL:
             return True
         s = chunk.strip()
-        return s.startswith(f"[{provider} error") or s.startswith(f"\n[{provider} error")
+        return (
+            s.startswith(f"[{provider} error") or
+            s.startswith(f"\n[{provider} error") or
+            "urlopen error" in s or
+            "getaddrinfo failed" in s
+        )
 
     def _safe_first(gen):
         """Get first chunk; return RATE_SENTINEL on any connection exception."""
@@ -1980,10 +2009,14 @@ You are in full autonomous coding mode. Follow this protocol exactly:
                 _fa_done = True
 
         if ant and not _fa_done:
-            yield from _call_claude_with_tools(messages, ant, _workspace(),
-                                                confirm_writes=confirm_writes,
-                                                is_owner=_owner_active())
-            _fa_done = True
+            gen   = _call_claude_with_tools(messages, ant, _workspace(),
+                                             confirm_writes=confirm_writes,
+                                             is_owner=_owner_active())
+            first = _safe_first(gen)
+            if first is not None and not _fa_error(first, "Claude"):
+                yield first
+                yield from gen
+                _fa_done = True
 
         # Offline fallback — all cloud providers exhausted or unreachable
         # Ollama is local with no token rate limits — unlimited in offline mode
