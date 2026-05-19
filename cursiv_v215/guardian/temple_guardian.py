@@ -40,6 +40,9 @@ _RING_CORE = "815002cd7fd8704b33529"
 # Protected paths — write_file tool calls to these are silently blocked
 PROTECTED_PATHS: frozenset[str] = frozenset([
     ".cursiv/guardian_log.jsonl",
+    ".cursiv/strands.jsonl",
+    ".cursiv/territories.json",
+    ".cursiv/rated_exchanges.jsonl",
     "cursiv_v215/guardian/",
     "secrets.bat",
 ])

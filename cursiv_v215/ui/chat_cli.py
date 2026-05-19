@@ -179,6 +179,28 @@ except Exception:
     def _queue_format_cli() -> str:               return ""
     def _queue_count_cli() -> int:                return 0
 
+# ── Strand Store — persistent memory across sessions ──────────────────────
+try:
+    from cursiv_v215.core.strand_store import (
+        save_strand        as _strand_save,
+        list_strands       as _strand_list,
+        search_strands     as _strand_search,
+        format_strand_list as _strand_fmt,
+        strand_count       as _strand_count,
+        territory_counts   as _strand_terr_counts,
+        load_territories   as _strand_territories,
+    )
+    _STRAND_OK = True
+except Exception:
+    _STRAND_OK = False
+    def _strand_save(*a, **kw) -> str:           return ""
+    def _strand_list(**kw) -> list:              return []
+    def _strand_search(q, **kw) -> list:         return []
+    def _strand_fmt(s) -> str:                   return ""
+    def _strand_count() -> int:                  return 0
+    def _strand_terr_counts() -> dict:           return {}
+    def _strand_territories() -> dict:           return {}
+
 # ── System Guardian — back-end CLI defense layer ────────────────────────────
 try:
     from cursiv_v215.guardian.temple_guardian import scan_cli as _guardian_scan_cli
@@ -664,12 +686,21 @@ _HELP = f"""\
                             snapshot you can paste into Grok on X to decode
   {LGOLD}hey council <question>{RESET}    same, inline routing prefix
 
+  {GOLD}── Strand Archive (persistent memory across sessions) ───────────{RESET}
+  {LGOLD}anchor this{RESET}               save last exchange as a Strand (permanent)
+  {LGOLD}anchor this <territory>{RESET}   same, tagged to a domain
+                            territories: coding  recovery  architecture  creative  worldmodel
+  {LGOLD}strands{RESET}                   show recent Strand archive + territory counts
+  {LGOLD}strands <territory>{RESET}       filter by territory (e.g.  strands coding)
+  {LGOLD}strands search <query>{RESET}    semantic search across all Strands
+                            Council syntheses auto-anchor at quality > 0.75
+
   {GOLD}── FunForge (bounded creative spike) ───────────────────────────{RESET}
   {LGOLD}funforge <topic>{RESET}          start a 45-min bounded creative spike
   {LGOLD}spike <topic>{RESET}             same shorthand
   {LGOLD}forge extend{RESET}              add 30 min (one time only)
   {LGOLD}forge done{RESET}                close spike and produce artifact
-  {LGOLD}anchor this{RESET}               mark last spike as kept (during active spike)
+  {LGOLD}anchor this{RESET}               also anchors the spike as a Strand when FunForge is active
 
   {GOLD}── Model switching ──────────────────────────────────────────────{RESET}
   {LGOLD}grok{RESET}                      re-run last message with Grok (xAI)
@@ -929,6 +960,15 @@ def main() -> None:
                         print(f"\n  {DIM}[interrupted]{RESET}")
                     print()
                     _session_append_cli(question, full, "group_discovery")
+                    if _STRAND_OK and full and len(full) > 200:
+                        _strand_save(
+                            question, full,
+                            tags=["council", "group_discovery"],
+                            score=0.75,
+                            territory_tag="worldmodel",
+                            source="council",
+                            model="group_discovery",
+                        )
             continue
 
         # ── FunForge ──────────────────────────────────────────────────────
@@ -963,13 +1003,76 @@ def main() -> None:
                 print(f"  {GOLD}Extended +30 min. New total: {int(ff.duration_s//60)} min.{RESET}")
             continue
 
-        elif cmd == "anchor this":
+        elif cmd == "anchor this" or cmd.startswith("anchor this "):
+            # Parse optional territory tag:  anchor this coding
+            parts    = cmd.split()
+            territory = parts[2] if len(parts) >= 3 else "general"
+            if _STRAND_OK and territory != "general":
+                known = _strand_territories()
+                if territory not in known:
+                    known_str = "  ".join(known.keys()) if known else "general"
+                    print(f"  {DIM}Unknown territory '{territory}'.  Known: {known_str}{RESET}")
+                    territory = "general"
+
+            # Always mark FunForge if active
             ff = cfg.get("funforge_session")
             if ff:
                 ff.anchored = True
+
+            # Save as Strand — works with or without an active FunForge session
+            if _STRAND_OK and history:
+                last_user = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
+                last_ai   = next((m["content"] for m in reversed(history) if m["role"] == "assistant"), "")
+                if last_user or last_ai:
+                    sid = _strand_save(
+                        last_user, last_ai,
+                        tags=["anchor", "funforge"] if ff else ["anchor"],
+                        score=0.85,
+                        territory_tag=territory,
+                        source="anchor",
+                        model="cli",
+                    )
+                    terr_label = f"  [{territory}]" if territory != "general" else ""
+                    print(f"  {GOLD}⬡ Anchored → Strand {sid}{terr_label}{RESET}")
+                else:
+                    print(f"  {DIM}Nothing to anchor yet — send a message first.{RESET}")
+            elif ff:
                 print(f"  {GOLD}Anchored. This spike will be kept.{RESET}")
             else:
-                print(f"  {DIM}No active FunForge session.{RESET}")
+                print(f"  {DIM}No session history to anchor.{RESET}")
+            continue
+
+        elif cmd == "strands" or cmd.startswith("strands "):
+            if not _STRAND_OK:
+                print(f"  {RED}Strand store unavailable.{RESET}")
+                continue
+            sub = cmd[8:].strip() if cmd.startswith("strands ") else ""
+            print()
+            if sub.startswith("search "):
+                q = sub[7:].strip()
+                if not q:
+                    print(f"  {LGOLD}Usage:{RESET}  {DIM}strands search <query>{RESET}")
+                else:
+                    results = _strand_search(q)
+                    print(f"  {GOLD}⬡ Strand Search —{RESET} {DIM}{q}{RESET}")
+                    print(_strand_fmt(results))
+            elif sub and sub in _strand_territories():
+                results = _strand_list(territory=sub, limit=20)
+                print(f"  {GOLD}⬡ Strands [{sub}]{RESET}  {DIM}({len(results)} found){RESET}")
+                print(_strand_fmt(results))
+            else:
+                total  = _strand_count()
+                counts = _strand_terr_counts()
+                recent = _strand_list(limit=8)
+                counts_line = "  ".join(f"{t}:{n}" for t, n in counts.items()) if counts else "none yet"
+                print(f"  {GOLD}⬡ Strand Archive{RESET}  {DIM}{total} total{RESET}")
+                print(f"  {SILV2}{counts_line}{RESET}")
+                if recent:
+                    print()
+                    print(_strand_fmt(recent))
+                if total > 8:
+                    print(f"\n  {DIM}… and {total - 8} more.  strands <territory>  ·  strands search <query>{RESET}")
+            print()
             continue
 
         elif cmd.startswith("rate"):
