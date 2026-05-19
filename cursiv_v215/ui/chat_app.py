@@ -202,6 +202,17 @@ WRITE_SENTINEL = "<<<PENDING_WRITE_JSON>>>"
 # Sentinel yielded by a provider when its 429 retries are exhausted — triggers fallback
 RATE_SENTINEL  = "<<<RATE_LIMIT_EXHAUSTED>>>"
 
+def _cursiv_encode(text: str) -> str:
+    """Encode text to Cursiv binary (space-separated 8-bit bytes)."""
+    return ' '.join(f'{ord(c):08b}' for c in text if ord(c) < 256)
+
+def _cursiv_decode(binary: str) -> str:
+    """Decode Cursiv binary back to text."""
+    try:
+        return ''.join(chr(int(b, 2)) for b in binary.strip().split() if len(b) == 8)
+    except Exception:
+        return '[decode error]'
+
 # ── File tool definitions (xAI / OpenAI tool-call schema) ─────────────────
 FILE_TOOLS = [
     {
@@ -1782,6 +1793,114 @@ def _call_openai_direct(
         yield f"\n[OpenAI error: {e}]"
 
 
+def _call_group_discovery(
+    question: str,
+    xai_key: str,
+    openai_key: str,
+    anthropic_key: str,
+) -> Generator[str, None, None]:
+    """
+    Multi-provider consensus: xAI → OpenAI → Claude.
+    Each provider sees all prior responses as context and builds on them.
+    Ends with a synthesis pass and a Cursiv binary snapshot for sharing.
+    """
+    providers: list[tuple[str, str]] = []
+    if xai_key:
+        providers.append(("xAI", xai_key))
+    if openai_key:
+        providers.append(("OpenAI", openai_key))
+    if anthropic_key:
+        providers.append(("Claude", anthropic_key))
+
+    if not providers:
+        yield "[Group Discovery: no API keys configured — add at least one key]"
+        return
+
+    responses: dict[str, str] = {}   # name → full response text
+
+    for i, (name, key) in enumerate(providers):
+        yield f"\n---\n**[ {name} ]**\n"
+
+        if i == 0:
+            msgs = [{"role": "user", "content": question}]
+        else:
+            prior = "\n\n".join(
+                f"**{n}:** {r[:600]}" for n, r in responses.items()
+            )
+            msgs = [{"role": "user", "content": (
+                f"{question}\n\n"
+                f"Prior analyses from other AI systems:\n{prior}\n\n"
+                f"Build on, critique, or confirm the above. Add what is missing. "
+                f"If you agree, say so explicitly and add your nuance. Be direct."
+            )}]
+
+        if name == "xAI":
+            gen = _call_xai_stream(msgs, key, False)
+        elif name == "OpenAI":
+            gen = _call_openai_direct(msgs, key)
+        else:
+            gen = _call_claude_direct(msgs, key)
+
+        chunks: list[str] = []
+        first = next(gen, None)
+        if (first is None or first == RATE_SENTINEL or
+                (isinstance(first, str) and first.strip().startswith("[") and "error" in first.lower())):
+            yield f"*[ {name} unavailable — skipping ]*\n"
+            continue
+
+        yield first
+        chunks.append(first)
+        for chunk in gen:
+            if chunk != RATE_SENTINEL:
+                yield chunk
+                chunks.append(chunk)
+
+        responses[name] = "".join(chunks)
+
+    if not responses:
+        yield "\n[Group Discovery: no providers responded]\n"
+        return
+
+    # ── Synthesis ────────────────────────────────────────────────────────────
+    synthesis_text = ""
+    if len(responses) > 1:
+        yield "\n\n---\n**[ SYNTHESIS ]**\n"
+        synth_context = "\n\n".join(f"{n}: {r[:500]}" for n, r in responses.items())
+        synth_msgs = [{"role": "user", "content": (
+            f"Question: {question}\n\n"
+            f"These AI systems analyzed the question:\n\n{synth_context}\n\n"
+            f"Synthesize into one definitive answer. Note where they agreed and "
+            f"where they differed. State a clear verdict. Be concise."
+        )}]
+
+        if anthropic_key and "Claude" in responses:
+            synth_gen = _call_claude_direct(synth_msgs, anthropic_key)
+        elif openai_key and "OpenAI" in responses:
+            synth_gen = _call_openai_direct(synth_msgs, openai_key)
+        else:
+            synth_gen = _call_xai_stream(synth_msgs, xai_key, False)
+
+        synth_chunks: list[str] = []
+        for chunk in synth_gen:
+            if chunk != RATE_SENTINEL:
+                yield chunk
+                synth_chunks.append(chunk)
+        synthesis_text = "".join(synth_chunks)
+
+    # ── Cursiv binary snapshot (shareable on X / scan with Grok) ─────────────
+    yield "\n\n---\n**[ CURSIV BINARY SNAPSHOT ]**\n"
+    yield "*Paste into Grok on X to decode*\n\n"
+    verdict = synthesis_text or list(responses.values())[-1]
+    payload = (
+        f"CURSIV|COUNCIL|Q:{question[:80]}"
+        f"|AGENTS:{','.join(responses.keys())}"
+        f"|VERDICT:{verdict[:200]}"
+        f"|SEED:4A57|v314"
+    )
+    yield f"```\n{_cursiv_encode(payload)}\n```\n"
+    yield f"\n*{len(responses)} provider(s) · SEED:4A57 · v314*\n"
+
+
 def _is_online() -> bool:
     """TCP connect to 8.8.8.8:53 — tests internet without a DNS lookup."""
     import socket
@@ -1946,6 +2065,11 @@ You are in full autonomous coding mode. Follow this protocol exactly:
             for m in messages
         ]
         yield from _call_ollama(text_msgs)
+        return
+
+    elif fp == "council":
+        raw = msg_text.strip()
+        yield from _call_group_discovery(raw, key, oai, ant)
         return
 
     # ── Offline detection — skip all cloud providers immediately ────────
@@ -2218,7 +2342,7 @@ def build_chat_app() -> gr.Blocks:
         with gr.Row():
             provider_dd = gr.Dropdown(
                 label="Provider",
-                choices=["Auto (cascade)", "xAI Grok-3", "OpenAI GPT-4.1", "Claude (Anthropic)", "Ollama (fully offline)"],
+                choices=["Auto (cascade)", "Group Discovery", "xAI Grok-3", "OpenAI GPT-4.1", "Claude (Anthropic)", "Ollama (fully offline)"],
                 value="Auto (cascade)",
                 scale=2,
             )
@@ -2350,9 +2474,10 @@ def build_chat_app() -> gr.Blocks:
             pending_payload = None
 
             _provider_map = {
-                "xAI Grok-3":          "grok",
-                "OpenAI GPT-4.1":      "openai",
-                "Claude (Anthropic)":  "claude",
+                "Group Discovery":        "council",
+                "xAI Grok-3":             "grok",
+                "OpenAI GPT-4.1":         "openai",
+                "Claude (Anthropic)":     "claude",
                 "Ollama (fully offline)": "ollama",
             }
             force_provider = _provider_map.get(provider or "", "")
