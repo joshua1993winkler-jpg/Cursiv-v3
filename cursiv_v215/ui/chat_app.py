@@ -1866,11 +1866,24 @@ def _call_group_discovery(
     if len(responses) > 1:
         yield "\n\n---\n**[ SYNTHESIS ]**\n"
         synth_context = "\n\n".join(f"{n}: {r[:500]}" for n, r in responses.items())
+        agent_list = ", ".join(responses.keys())
         synth_msgs = [{"role": "user", "content": (
             f"Question: {question}\n\n"
-            f"These AI systems analyzed the question:\n\n{synth_context}\n\n"
-            f"Synthesize into one definitive answer. Note where they agreed and "
-            f"where they differed. State a clear verdict. Be concise."
+            f"The following AI systems each analyzed this question independently:\n\n"
+            f"{synth_context}\n\n"
+            f"Produce a structured synthesis report in EXACTLY this format:\n\n"
+            f"## Agreements (High Confidence)\n"
+            f"- [bullet each point all agents agreed on, with confidence note]\n\n"
+            f"## Disagreements (Weighted)\n"
+            f"- [AgentA vs AgentB]: [describe the tension]\n"
+            f"  - [AgentA]'s position: ...\n"
+            f"  - [AgentB]'s position: ...\n"
+            f"  - Weighting suggestion: [which position is better supported and why]\n\n"
+            f"## Synthesis Notes\n"
+            f"- Key tensions: [core unresolved conflicts]\n"
+            f"- Recommended weighting: [which agent's framing should carry most weight and why]\n"
+            f"- Remaining uncertainty: [what cannot be resolved without more data]\n\n"
+            f"Agents: {agent_list}. Be precise and direct. No filler."
         )}]
 
         if anthropic_key and "Claude" in responses:
