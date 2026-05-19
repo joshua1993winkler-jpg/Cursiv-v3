@@ -1209,6 +1209,7 @@ def main() -> None:
             print(f"\n  {GOLD}⬡ Page Pull —{RESET} {DIM}{url[:70]}{RESET}")
             try:
                 import urllib.request as _pur
+                import urllib.error as _uerr
                 import re as _pre
                 req = _pur.Request(url, headers={
                     "User-Agent": "Mozilla/5.0 (compatible; Cursiv/3.14)",
@@ -1227,6 +1228,25 @@ def main() -> None:
                     print(f"  {DIM}Page returned too little text — may require JavaScript.{RESET}\n")
                     continue
                 print(f"  {DIM}{len(text)} chars extracted — analyzing with local council…{RESET}\n")
+            except _uerr.HTTPError as _he:
+                if _he.code == 404:
+                    print(f"  {RED}404 — page not found. Internet is reachable; URL may have moved or been mistyped.{RESET}\n")
+                else:
+                    print(f"  {RED}HTTP {_he.code}: {_he.reason}{RESET}\n")
+                continue
+            except (_uerr.URLError, OSError) as _ue:
+                _online = False
+                try:
+                    import urllib.request as _pc
+                    with _pc.urlopen("https://www.google.com", timeout=4) as _chk:
+                        _online = _chk.status < 500
+                except Exception:
+                    pass
+                if _online:
+                    print(f"  {RED}Fetch failed — internet is up but URL is unreachable: {_ue}{RESET}\n")
+                else:
+                    print(f"  {RED}No internet connection detected — pull requires network access.{RESET}\n")
+                continue
             except Exception as _fe:
                 print(f"  {RED}Fetch failed: {_fe}{RESET}\n")
                 continue
