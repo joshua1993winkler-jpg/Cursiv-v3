@@ -49,6 +49,17 @@ from cursiv_v215.ui.chat_app import (
     _cursiv_encode,
 )
 
+try:
+    from cursiv_v215.forge.funforge_meta import (
+        FunForgeSession,
+        FUNFORGE_CLOSE_PROMPT,
+        detect_trigger  as _ff_detect,
+        extract_topic   as _ff_topic,
+    )
+    _FF_OK = True
+except Exception:
+    _FF_OK = False
+
 # ── Sovereign verification (hash assembled from 3 modules — no plaintext) ──
 import hashlib as _hl_cli
 try:
@@ -518,8 +529,16 @@ def _input_prompt(cfg: dict) -> str:
     except Exception:
         pass
 
+    ff = cfg.get("funforge_session")
+    ff_s = ""
+    if ff and not ff.closed:
+        if ff.expired:
+            ff_s = f"  {RED}⬡FORGE:DONE{RESET}"
+        else:
+            ff_s = f"  {GOLD}⬡FORGE:{ff.time_display()}{RESET}"
+
     hint = _pad(
-        f"  {xai_s}  {ant_s}  {fa_s}  mode:{mode_s}{ov_s}{tpm_part}  {SILV2}·  Ctrl+C{RESET}",
+        f"  {xai_s}  {ant_s}  {fa_s}  mode:{mode_s}{ov_s}{ff_s}{tpm_part}  {SILV2}·  Ctrl+C{RESET}",
         inner,
     )
 
@@ -607,6 +626,13 @@ _HELP = f"""\
                             snapshot you can paste into Grok on X to decode
   {LGOLD}hey council <question>{RESET}    same, inline routing prefix
 
+  {GOLD}── FunForge (bounded creative spike) ───────────────────────────{RESET}
+  {LGOLD}funforge <topic>{RESET}          start a 45-min bounded creative spike
+  {LGOLD}spike <topic>{RESET}             same shorthand
+  {LGOLD}forge extend{RESET}              add 30 min (one time only)
+  {LGOLD}forge done{RESET}                close spike and produce artifact
+  {LGOLD}anchor this{RESET}               mark last spike as kept (during active spike)
+
   {GOLD}── Model switching ──────────────────────────────────────────────{RESET}
   {LGOLD}grok{RESET}                      re-run last message with Grok (xAI)
   {LGOLD}claude{RESET}                    re-run last message with Claude (Anthropic)
@@ -687,6 +713,7 @@ def main() -> None:
         "anthropic_key":    os.environ.get("ANTHROPIC_API_KEY", ""),
         "file_access":      False,
         "confirm_mode":     "confirm",
+        "funforge_session": None,
         "workspace":        launch_ws,
         "obsidian_enabled": _obs_cfg_boot.get("enabled", False),
         "obsidian_path":    _obs_vault_boot,
@@ -857,6 +884,75 @@ def main() -> None:
                         print(f"\n  {DIM}[interrupted]{RESET}")
                     print()
                     _session_append_cli(question, full, "group_discovery")
+            continue
+
+        # ── FunForge ──────────────────────────────────────────────────────
+        elif cmd in ("forge done", "forge close"):
+            ff: FunForgeSession | None = cfg.get("funforge_session")
+            if not ff or ff.closed:
+                print(f"  {DIM}No active FunForge session.{RESET}")
+            else:
+                print(f"\n  {GOLD}⬡ FUNFORGE CLOSING{RESET}  {SILV2}· producing artifact…{RESET}\n")
+                full = ""
+                for chunk in chat(
+                    FUNFORGE_CLOSE_PROMPT, history,
+                    cfg["api_key"], None, False, cfg["workspace"],
+                    cfg["openai_key"], False, cfg["anthropic_key"],
+                ):
+                    sys.stdout.write(f"{GOLD}{chunk}{RESET}")
+                    sys.stdout.flush()
+                    full += chunk
+                print()
+                ff.closed = True
+                cfg["funforge_session"] = None
+                _session_append_cli(FUNFORGE_CLOSE_PROMPT, full, "funforge_close")
+            continue
+
+        elif cmd == "forge extend":
+            ff = cfg.get("funforge_session")
+            if not ff or ff.closed:
+                print(f"  {DIM}No active FunForge session.{RESET}")
+            elif not ff.extend():
+                print(f"  {GOLD}Already extended once — hold the line.{RESET}")
+            else:
+                print(f"  {GOLD}Extended +30 min. New total: {int(ff.duration_s//60)} min.{RESET}")
+            continue
+
+        elif cmd == "anchor this":
+            ff = cfg.get("funforge_session")
+            if ff:
+                ff.anchored = True
+                print(f"  {GOLD}Anchored. This spike will be kept.{RESET}")
+            else:
+                print(f"  {DIM}No active FunForge session.{RESET}")
+            continue
+
+        elif _FF_OK and (cmd.startswith("funforge") or cmd.startswith("spike ")):
+            topic = _ff_topic(raw)
+            ff    = FunForgeSession(topic)
+            cfg["funforge_session"] = ff
+            print(
+                f"\n  {GOLD}╔══════════════════════════════════════════╗{RESET}\n"
+                f"  {GOLD}║  ⬡ FUNFORGE ACTIVE  ·  {ff.time_display()} remaining  ║{RESET}\n"
+                f"  {GOLD}║  Focus: {topic[:40]:<40}  ║{RESET}\n"
+                f"  {GOLD}║  Council: Lens + Spark + Balance          ║{RESET}\n"
+                f"  {GOLD}║  Type  forge done  when finished          ║{RESET}\n"
+                f"  {GOLD}╚══════════════════════════════════════════╝{RESET}\n"
+            )
+            spike_msg = f"[FUNFORGE] {ff.system_fragment()}\n\nLet's begin. Respond to the topic playfully and start the creative spike."
+            full = ""
+            for chunk in chat(
+                spike_msg, history,
+                cfg["api_key"], None, False, cfg["workspace"],
+                cfg["openai_key"], False, cfg["anthropic_key"],
+            ):
+                sys.stdout.write(f"{GOLD}{chunk}{RESET}")
+                sys.stdout.flush()
+                full += chunk
+            print()
+            history.append({"role": "user",      "content": spike_msg})
+            history.append({"role": "assistant",  "content": full})
+            _session_append_cli(spike_msg, full, "funforge_start")
             continue
 
         elif cmd == "ref" or cmd.startswith("ref "):
