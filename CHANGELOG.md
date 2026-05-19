@@ -1,5 +1,44 @@
 # Changelog
 
+## v3.14-U01 — Live Routing & Account Recovery (2026-05-19)
+
+### True cascade routing, live status chips, security-question password reset, and offline-safe web app.
+
+**Cascade routing — terminal & web app:**
+- xAI Grok-3 → OpenAI GPT-4.1 → Claude → Ollama tried in order; each provider falls through on failure
+- Fallback banners shown inline: `*[xAI → OpenAI unavailable — Claude]*`
+- `hey grok / hey claude / hey chat / hey openai / hey gpt / hey ollama` prefix in terminal forces that provider for one message
+- Provider dropdown in Gradio web app: Auto (cascade) / xAI Grok-3 / OpenAI GPT-4.1 / Claude (Anthropic) / Ollama (fully offline)
+
+**Live status chips — terminal:**
+- All API chips probe the actual endpoint on startup and after key entry (GET `/v1/models` for xAI/OpenAI; tiny Claude completion for Anthropic)
+- GREEN `✓` = endpoint reachable · RED `✗` = key missing or endpoint down · GOLD `?` = not yet tested
+- File access, Obsidian, and Guardian chips go RED when disabled/unavailable, GREEN when active
+
+**Password reset via security questions:**
+- "Forgot Password?" button added to the login screen
+- During account creation, prompted to pick 3 of 20 predefined questions and provide answers
+- Answers normalised (lowercase, strip punctuation) then bcrypt-hashed (rounds=10) and stored in `.cursiv/runtime/sq.json`
+- Reset flow: username → answer 2-of-3 questions → set new password (3-page stacked dialog)
+- Nuclear reset fallback (delete all credentials) only available if security questions were skipped at setup
+
+**Update checker — launcher & tray:**
+- "Check for Updates" button in the launcher window (side-by-side with Security Questions)
+- "Check for Updates" in the system tray right-click menu
+- Queries the GitHub releases API in a background thread — no data sent, just fetches version info
+- If a newer version is found: shows a dialog with the release notes and a "Download & Install" button
+- Download & Install: fetches the new installer `.exe` to a temp folder and runs it — Inno Setup overwrites in-place without uninstalling (no re-download of Ollama)
+- Falls back to "Open Releases Page" (browser) if download fails
+- Never auto-updates; user is always in control
+
+**Gradio web app — offline-safe startup:**
+- `GoogleFont("EB Garamond")` removed from theme — was making a network call on every offline startup
+- `analytics_enabled=False, show_api=False` added to `app.launch()` — no Gradio telemetry phoning home
+- API keys auto-fill from environment variables (`XAI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) set by `secrets.bat`
+- Fixed `ant`/`oai` NameError in `_submit` — corrected to `anthropic_key`/`openai_key`
+
+---
+
 ## v3.14.0 — Ollama Ready Offline Edition (2026-05-18)
 
 ### The offline release. Full local AI. No keys required.

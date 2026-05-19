@@ -95,6 +95,26 @@ def is_setup_complete() -> bool:
     return _FLAG_FILE.exists()
 
 
+def username_exists(username: str) -> bool:
+    """Return True if the provided username matches the stored username hash."""
+    if not _META_FILE.exists():
+        return False
+    try:
+        stored = _META_FILE.read_text(encoding="utf-8").strip()
+        candidate = hashlib.sha256(username.encode("utf-8")).hexdigest()
+        return hmac.compare_digest(candidate, stored)
+    except Exception:
+        return False
+
+
+def reset_password(new_password: str) -> None:
+    """Replace the stored password hash after successful security-question verification."""
+    _check_bcrypt()
+    _ensure()
+    hashed = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt(rounds=12))
+    _HASH_FILE.write_bytes(hashed)
+
+
 def reset_credentials() -> None:
     """Delete all stored credential files, returning the app to first-run state."""
     for f in (_HASH_FILE, _META_FILE, _FLAG_FILE):

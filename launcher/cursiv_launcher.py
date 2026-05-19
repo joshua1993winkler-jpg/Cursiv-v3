@@ -13,19 +13,25 @@ Improvements over v1:
 
 from __future__ import annotations
 
+import json
 import os
 import socket
 import subprocess
 import sys
+import tempfile
+import threading
+import urllib.error
+import urllib.request
 import webbrowser
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import QPoint, QSize, Qt, QTimer
+from PyQt6.QtCore import QPoint, QSize, Qt, QTimer, pyqtSignal, QObject
 from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import (
-    QApplication, QHBoxLayout, QLabel, QMainWindow,
-    QMenu, QPushButton, QSystemTrayIcon, QVBoxLayout, QWidget,
+    QApplication, QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QMainWindow,
+    QMenu, QMessageBox, QProgressBar, QPushButton, QScrollArea,
+    QSystemTrayIcon, QTextEdit, QVBoxLayout, QWidget,
 )
 
 if getattr(sys, "frozen", False):
@@ -45,6 +51,11 @@ _LOCK_PORT       = 17_860        # local socket port for single-instance lock
 _APP_PORT        = 7_860         # Cursiv Gradio app port
 _WATCHDOG_MS     = 3_000         # ms between app-health checks
 _POLL_DEADLINE_S = 30            # seconds to wait for app to bind its port
+
+# ── Update checker ─────────────────────────────────────────────────────────────
+_CURRENT_VERSION   = "3.14-U01"
+_GITHUB_API        = "https://api.github.com/repos/joshua1993winkler-jpg/Cursiv/releases/latest"
+_GITHUB_RELEASES   = "https://github.com/joshua1993winkler-jpg/Cursiv/releases"
 
 # ── Palette ───────────────────────────────────────────────────────────────────
 BG     = "#0b0b12"
@@ -197,6 +208,157 @@ def _open_terminal_window(title: str, cmd: str) -> None:
         )
 
 
+# ── Update checker ────────────────────────────────────────────────────────────
+
+def _version_is_newer(remote: str, current: str) -> bool:
+    """True if remote tag is different from (and presumably newer than) current."""
+    return remote.lstrip("v").strip().lower() != current.strip().lower()
+
+
+class _UpdateSignals(QObject):
+    result = pyqtSignal(dict)   # emitted on the main thread when check completes
+
+
+class UpdateChecker:
+    """Fetches the latest GitHub release in a background thread; emits result on main thread."""
+
+    def __init__(self, on_result):
+        self._signals = _UpdateSignals()
+        self._signals.result.connect(on_result)
+
+    def check(self):
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self):
+        try:
+            req = urllib.request.Request(
+                _GITHUB_API,
+                headers={"Accept": "application/vnd.github+json", "User-Agent": "Cursiv-Launcher"},
+            )
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            tag  = data.get("tag_name", "").lstrip("v")
+            body = data.get("body", "")
+            assets = data.get("assets", [])
+            exe_url = next(
+                (a["browser_download_url"] for a in assets if a["name"].endswith(".exe")),
+                None,
+            )
+            self._signals.result.emit({
+                "ok":      True,
+                "tag":     tag,
+                "body":    body,
+                "exe_url": exe_url,
+            })
+        except Exception as exc:
+            self._signals.result.emit({"ok": False, "error": str(exc)})
+
+
+class UpdateDialog(QDialog):
+    """Shows release notes and lets the user download + run the new installer."""
+
+    def __init__(self, tag: str, body: str, exe_url: Optional[str], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Cursiv — Update Available")
+        self.setFixedWidth(500)
+        self.setStyleSheet(f"background: {BG}; color: {SILVER};")
+
+        vlay = QVBoxLayout(self)
+        vlay.setSpacing(12)
+        vlay.setContentsMargins(20, 20, 20, 20)
+
+        header = QLabel(f"<b>Version {tag} is available</b>  (you have {_CURRENT_VERSION})")
+        header.setStyleSheet(f"color: {GOLD}; font-size: 14px;")
+        vlay.addWidget(header)
+
+        notes_lbl = QLabel("What's new:")
+        notes_lbl.setStyleSheet(f"color: {SILV2}; font-size: 11px;")
+        vlay.addWidget(notes_lbl)
+
+        notes = QTextEdit()
+        notes.setReadOnly(True)
+        notes.setPlainText(body or "(no release notes)")
+        notes.setFixedHeight(180)
+        notes.setStyleSheet(
+            f"background: {BG2}; color: {SILVER}; border: 1px solid {BORDER};"
+            " font-family: 'Segoe UI', Arial; font-size: 12px;"
+        )
+        vlay.addWidget(notes)
+
+        self._progress = QProgressBar()
+        self._progress.setRange(0, 0)   # indeterminate
+        self._progress.setVisible(False)
+        self._progress.setStyleSheet(
+            f"QProgressBar {{ background: {BG2}; border: 1px solid {BORDER}; }}"
+            f"QProgressBar::chunk {{ background: #2255DD; }}"
+        )
+        vlay.addWidget(self._progress)
+
+        self._status = QLabel("")
+        self._status.setStyleSheet(f"color: {SILV2}; font-size: 11px;")
+        self._status.setVisible(False)
+        vlay.addWidget(self._status)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+
+        if exe_url:
+            self._dl_btn = QPushButton("Download & Install")
+            self._dl_btn.setStyleSheet(
+                f"background: #2255DD; color: #fff; border-radius: 4px;"
+                " font-weight: 600; padding: 6px 16px;"
+            )
+            self._dl_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self._dl_btn.clicked.connect(lambda: self._download(exe_url))
+            btn_row.addWidget(self._dl_btn)
+
+        open_btn = QPushButton("Open Releases Page")
+        open_btn.setStyleSheet(
+            f"background: {BG2}; color: {SILVER}; border: 1px solid {BORDER};"
+            " border-radius: 4px; padding: 6px 16px;"
+        )
+        open_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        open_btn.clicked.connect(lambda: webbrowser.open(_GITHUB_RELEASES))
+        btn_row.addWidget(open_btn)
+
+        btn_row.addStretch()
+        later_btn = QPushButton("Not Now")
+        later_btn.setStyleSheet(
+            f"background: transparent; color: {SILV2}; border: none; padding: 6px 8px;"
+        )
+        later_btn.clicked.connect(self.reject)
+        btn_row.addWidget(later_btn)
+
+        vlay.addLayout(btn_row)
+
+    def _download(self, url: str):
+        self._dl_btn.setEnabled(False)
+        self._progress.setVisible(True)
+        self._status.setText("Downloading installer…")
+        self._status.setVisible(True)
+        threading.Thread(target=self._do_download, args=(url,), daemon=True).start()
+
+    def _do_download(self, url: str):
+        try:
+            tmp = tempfile.mktemp(suffix=".exe", prefix="Cursiv-Setup-")
+            urllib.request.urlretrieve(url, tmp)
+            # Launch installer (Inno Setup runs in-place, overwrites without uninstall)
+            subprocess.Popen([tmp], creationflags=subprocess.CREATE_NO_WINDOW)
+            self._finish("Installer launched. Cursiv will update and restart.")
+        except Exception as exc:
+            self._finish(f"Download failed: {exc}  —  use 'Open Releases Page' instead.")
+
+    def _finish(self, msg: str):
+        # Must update UI on main thread
+        QTimer.singleShot(0, lambda: self._apply_finish(msg))
+
+    def _apply_finish(self, msg: str):
+        self._progress.setVisible(False)
+        self._status.setText(msg)
+        if hasattr(self, "_dl_btn"):
+            self._dl_btn.setEnabled(True)
+
+
 # ── Title bar ─────────────────────────────────────────────────────────────────
 
 class TitleBar(QWidget):
@@ -266,7 +428,7 @@ class CursivLauncher(QMainWindow):
 
         self.setWindowTitle("Cursiv")
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
-        self.setFixedSize(QSize(420, 360))
+        self.setFixedSize(QSize(420, 400))
         self.setStyleSheet(QSS)
 
         self._build_ui()
@@ -400,6 +562,36 @@ class CursivLauncher(QMainWindow):
         hint_lay.addWidget(sub)
 
         col.addWidget(hint_box)
+
+        _util_style = f"""
+            QPushButton {{
+                background: transparent; color: {SILV2};
+                font-size: 11px; border: 1px solid {BORDER}; border-radius: 4px;
+                padding: 2px 6px;
+            }}
+            QPushButton:hover {{ color: {GOLD}; border-color: {LGOLD}; }}
+        """
+
+        util_row = QHBoxLayout()
+        util_row.setSpacing(8)
+
+        sq_btn = QPushButton("Security Questions")
+        sq_btn.setFixedHeight(28)
+        sq_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        sq_btn.setToolTip("Set up or update your password-recovery security questions")
+        sq_btn.setStyleSheet(_util_style)
+        sq_btn.clicked.connect(self._setup_sq)
+        util_row.addWidget(sq_btn)
+
+        self._upd_btn = QPushButton("Check for Updates")
+        self._upd_btn.setFixedHeight(28)
+        self._upd_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._upd_btn.setToolTip("Query GitHub for the latest Cursiv release")
+        self._upd_btn.setStyleSheet(_util_style)
+        self._upd_btn.clicked.connect(self._check_updates)
+        util_row.addWidget(self._upd_btn)
+
+        col.addLayout(util_row)
         return col
 
     def _build_footer(self) -> QWidget:
@@ -496,6 +688,51 @@ class CursivLauncher(QMainWindow):
     def _set_status(self, msg: str):
         self._status_lbl.setText(msg)
 
+    # ── Security questions setup ──────────────────────────────────────────
+
+    def _setup_sq(self):
+        try:
+            from launcher.login_dialog import SecurityQSetupDialog
+        except Exception:
+            try:
+                from login_dialog import SecurityQSetupDialog
+            except Exception as exc:
+                self._set_status(f"Cannot open security questions: {exc}")
+                return
+        dlg = SecurityQSetupDialog(self)
+        dlg.exec()
+        try:
+            from cursiv_v215.guardian.security_questions import is_setup_complete
+            if is_setup_complete():
+                self._set_status("Security questions saved.")
+            else:
+                self._set_status("Security questions skipped.")
+        except Exception:
+            pass
+
+    # ── Update checker ────────────────────────────────────────────────────
+
+    def _check_updates(self):
+        self._upd_btn.setEnabled(False)
+        self._upd_btn.setText("Checking…")
+        self._set_status("Querying GitHub for updates…")
+        checker = UpdateChecker(self._on_update_result)
+        checker.check()
+
+    def _on_update_result(self, result: dict):
+        self._upd_btn.setEnabled(True)
+        self._upd_btn.setText("Check for Updates")
+        if not result.get("ok"):
+            self._set_status(f"Update check failed — {result.get('error', 'no internet?')}")
+            return
+        tag = result["tag"]
+        if not _version_is_newer(tag, _CURRENT_VERSION):
+            self._set_status(f"You're up to date  ({_CURRENT_VERSION})")
+            return
+        self._set_status(f"Update available: v{tag}")
+        dlg = UpdateDialog(tag, result["body"], result["exe_url"], self)
+        dlg.exec()
+
     # ── Tray ──────────────────────────────────────────────────────────────
 
     def _build_tray(self):
@@ -522,6 +759,15 @@ class CursivLauncher(QMainWindow):
         self._stop_act.triggered.connect(self._stop_app)
         self._stop_act.setEnabled(False)
         menu.addAction(self._stop_act)
+
+        menu.addSeparator()
+        sq_act = QAction("Security Questions", self)
+        sq_act.triggered.connect(self._setup_sq)
+        menu.addAction(sq_act)
+
+        upd_act = QAction("Check for Updates", self)
+        upd_act.triggered.connect(self._check_updates)
+        menu.addAction(upd_act)
 
         menu.addSeparator()
         quit_act = QAction("Quit", self)

@@ -29,6 +29,7 @@ import re
 import shutil
 import sys
 import textwrap
+import urllib.request
 from pathlib import Path
 
 # Force UTF-8 stdout — prevents surrogate/emoji crashes on Windows terminals
@@ -207,6 +208,67 @@ RESET  = "\033[0m"
 
 _ANSI = re.compile(r"\033\[[0-9;]*[mABCDEFGHJKST]")
 
+# ── API connectivity probes ────────────────────────────────────────────────
+
+def _probe_xai(key: str) -> bool:
+    try:
+        req = urllib.request.Request(
+            "https://api.x.ai/v1/models",
+            headers={"Authorization": f"Bearer {key}"},
+            method="GET",
+        )
+        with urllib.request.urlopen(req, timeout=8) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
+def _probe_openai(key: str) -> bool:
+    try:
+        req = urllib.request.Request(
+            "https://api.openai.com/v1/models",
+            headers={"Authorization": f"Bearer {key}"},
+            method="GET",
+        )
+        with urllib.request.urlopen(req, timeout=8) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
+def _probe_claude(key: str) -> bool:
+    try:
+        payload = json.dumps({
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 1,
+            "messages": [{"role": "user", "content": "hi"}],
+        }).encode()
+        req = urllib.request.Request(
+            "https://api.anthropic.com/v1/messages",
+            data=payload,
+            headers={
+                "content-type": "application/json",
+                "x-api-key": key,
+                "anthropic-version": "2023-06-01",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=8) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
+def _api_chip(label: str, key: str, live) -> str:
+    """Colored status chip: green=live, red=fail or off, gold=untested."""
+    if not key:
+        return f"{RED}{label}:✗{RESET}"
+    if live is True:
+        return f"{GREEN}{label}:OK{RESET}"
+    if live is False:
+        return f"{RED}{label}:✗{RESET}"
+    return f"{GOLD}{label}:?{RESET}"
+
+
 # ── Layout ──────────────────────────────────────────────────────────────────
 _HEADER_ROWS = 6    # rows the fixed header occupies (5 box lines + 1 blank)
 _layout_on   = False  # True once scroll-region layout is active
@@ -274,13 +336,13 @@ def _draw_header(cfg: dict) -> None:
     print(_row(icons, w))
     print(_mid(w))
 
-    xai_s  = (f"{GREEN}xAI:OK{RESET}"    if cfg["api_key"]           else f"{SILV2}xAI:--{RESET}")
-    oai_s  = (f"{GREEN}OpenAI:OK{RESET}" if cfg["openai_key"]        else f"{SILV2}OpenAI:--{RESET}")
-    ant_s  = (f"{GREEN}Claude:OK{RESET}" if cfg.get("anthropic_key") else f"{SILV2}Claude:--{RESET}")
-    fa_s   = (f"{GREEN}files:ON{RESET}"  if cfg["file_access"]       else f"{SILV2}files:OFF{RESET}")
+    xai_s  = _api_chip("xAI",    cfg.get("api_key", ""),           cfg.get("xai_live"))
+    oai_s  = _api_chip("OpenAI", cfg.get("openai_key", ""),        cfg.get("openai_live"))
+    ant_s  = _api_chip("Claude", cfg.get("anthropic_key", ""),     cfg.get("claude_live"))
+    fa_s   = (f"{GREEN}files:ON{RESET}"  if cfg["file_access"]       else f"{RED}files:OFF{RESET}")
     mode_s = (f"{RED}CONFIRM[!]{RESET}"  if cfg["confirm_mode"] == "confirm" else f"{GREEN}AUTO{RESET}")
-    grd_s  = (f"{LAPIS}Guard:{_sfp()}{RESET}" if _CLI_GUARDIAN_OK   else f"{SILV2}Guard:--{RESET}")
-    obs_s  = (f"{GREEN}Obs:ON{RESET}"    if cfg.get("obsidian_enabled") else f"{SILV2}Obs:OFF{RESET}")
+    grd_s  = (f"{GREEN}Guard:{_sfp()}{RESET}" if _CLI_GUARDIAN_OK   else f"{RED}Guard:✗{RESET}")
+    obs_s  = (f"{GREEN}Obs:ON{RESET}"    if cfg.get("obsidian_enabled") else f"{RED}Obs:OFF{RESET}")
     status = (
         f"  {xai_s}  {oai_s}  {ant_s}  {fa_s}  "
         f"mode:{mode_s}  {grd_s}  {obs_s}  {SILV2}'help'{RESET}"
@@ -435,9 +497,9 @@ def _input_prompt(cfg: dict) -> str:
     inner = w - 6
 
     # Live status — always visible here regardless of scroll position
-    xai_s  = (f"{GREEN}xAI:OK{RESET}"    if cfg.get("api_key")          else f"{SILV2}xAI:--{RESET}")
-    ant_s  = (f"{GREEN}Claude:OK{RESET}" if cfg.get("anthropic_key")    else f"{SILV2}Claude:--{RESET}")
-    fa_s   = (f"{GREEN}files:ON{RESET}"  if cfg.get("file_access")      else f"{SILV2}files:OFF{RESET}")
+    xai_s  = _api_chip("xAI",    cfg.get("api_key", ""),       cfg.get("xai_live"))
+    ant_s  = _api_chip("Claude", cfg.get("anthropic_key", ""), cfg.get("claude_live"))
+    fa_s   = (f"{GREEN}files:ON{RESET}"  if cfg.get("file_access")  else f"{RED}files:OFF{RESET}")
     mode_s = (f"{RED}CONFIRM{RESET}"     if cfg["confirm_mode"] == "confirm" else f"{GREEN}AUTO{RESET}")
     ov_s   = (f"  {LAPIS}⚖OVERSEER{RESET}" if cfg.get("overseer_mode") else "")
 
@@ -621,6 +683,10 @@ def main() -> None:
         "obsidian_enabled": _obs_cfg_boot.get("enabled", False),
         "obsidian_path":    _obs_vault_boot,
         "overseer_mode":    False,   # Grok generates → Claude reviews
+        # Live connection status: None=untested, True=ok, False=fail
+        "xai_live":    None,
+        "openai_live": None,
+        "claude_live": None,
     }
 
     # Auto-fix swapped env-var keys
@@ -633,6 +699,31 @@ def main() -> None:
     if cfg["openai_key"].startswith("xai-"):
         cfg["api_key"] = cfg["api_key"] or cfg["openai_key"]
         cfg["openai_key"] = ""
+
+    # ── Startup connectivity probe ────────────────────────────────────────
+    _any_key = cfg["api_key"] or cfg["openai_key"] or cfg["anthropic_key"]
+    if _any_key:
+        sys.stdout.write(f"  {SILV2}Checking API connections...{RESET}  ")
+        sys.stdout.flush()
+        if cfg["api_key"]:
+            cfg["xai_live"] = _probe_xai(cfg["api_key"])
+            sys.stdout.write(
+                f"{GREEN}xAI:OK{RESET}  " if cfg["xai_live"] else f"{RED}xAI:✗{RESET}  "
+            )
+            sys.stdout.flush()
+        if cfg["openai_key"]:
+            cfg["openai_live"] = _probe_openai(cfg["openai_key"])
+            sys.stdout.write(
+                f"{GREEN}OpenAI:OK{RESET}  " if cfg["openai_live"] else f"{RED}OpenAI:✗{RESET}  "
+            )
+            sys.stdout.flush()
+        if cfg["anthropic_key"]:
+            cfg["claude_live"] = _probe_claude(cfg["anthropic_key"])
+            sys.stdout.write(
+                f"{GREEN}Claude:OK{RESET}  " if cfg["claude_live"] else f"{RED}Claude:✗{RESET}  "
+            )
+            sys.stdout.flush()
+        print()
 
     history:        list[dict] = []
     last_user_msg:  str       = ""   # used by grok/claude retry commands
@@ -766,11 +857,20 @@ def main() -> None:
             new_key = raw[4:].strip()
             if new_key.startswith("sk-") or new_key.startswith("sk_"):
                 cfg["openai_key"] = new_key
-                print(f"  {DIM}That's an OpenAI key — routed to the OpenAI slot. ✓{RESET}")
+                cfg["openai_live"] = None
+                print(f"  {DIM}That's an OpenAI key — routed to the OpenAI slot.{RESET}")
                 print(f"  {DIM}xAI keys start with  xai-  (console.x.ai){RESET}")
+                sys.stdout.write(f"  {GOLD}Testing OpenAI...{RESET}  ")
+                sys.stdout.flush()
+                cfg["openai_live"] = _probe_openai(new_key)
+                print(f"{GREEN}connected ✓{RESET}" if cfg["openai_live"] else f"{RED}unreachable ✗{RESET}")
             else:
                 cfg["api_key"] = new_key
-                print(f"  {GREEN}xAI key set. ✓{RESET}")
+                cfg["xai_live"] = None
+                sys.stdout.write(f"  {GOLD}Testing xAI...{RESET}  ")
+                sys.stdout.flush()
+                cfg["xai_live"] = _probe_xai(new_key)
+                print(f"{GREEN}connected ✓{RESET}" if cfg["xai_live"] else f"{RED}unreachable ✗{RESET}")
             _print_header(cfg)
             continue
 
@@ -778,14 +878,28 @@ def main() -> None:
             new_key = raw[7:].strip()
             if new_key.startswith("xai-"):
                 cfg["api_key"] = new_key
-                print(f"  {DIM}That's an xAI key — routed to the xAI slot. ✓{RESET}")
+                cfg["xai_live"] = None
+                print(f"  {DIM}That's an xAI key — routed to the xAI slot.{RESET}")
                 print(f"  {DIM}OpenAI keys start with  sk-  (platform.openai.com){RESET}")
+                sys.stdout.write(f"  {GOLD}Testing xAI...{RESET}  ")
+                sys.stdout.flush()
+                cfg["xai_live"] = _probe_xai(new_key)
+                print(f"{GREEN}connected ✓{RESET}" if cfg["xai_live"] else f"{RED}unreachable ✗{RESET}")
             elif new_key.startswith("sk-ant-"):
                 cfg["anthropic_key"] = new_key
-                print(f"  {DIM}That's an Anthropic key — routed to the Anthropic slot. ✓{RESET}")
+                cfg["claude_live"] = None
+                print(f"  {DIM}That's an Anthropic key — routed to the Anthropic slot.{RESET}")
+                sys.stdout.write(f"  {GOLD}Testing Claude...{RESET}  ")
+                sys.stdout.flush()
+                cfg["claude_live"] = _probe_claude(new_key)
+                print(f"{GREEN}connected ✓{RESET}" if cfg["claude_live"] else f"{RED}unreachable ✗{RESET}")
             else:
                 cfg["openai_key"] = new_key
-                print(f"  {GREEN}OpenAI key set. ✓{RESET}")
+                cfg["openai_live"] = None
+                sys.stdout.write(f"  {GOLD}Testing OpenAI...{RESET}  ")
+                sys.stdout.flush()
+                cfg["openai_live"] = _probe_openai(new_key)
+                print(f"{GREEN}connected ✓{RESET}" if cfg["openai_live"] else f"{RED}unreachable ✗{RESET}")
             _print_header(cfg)
             continue
 
@@ -793,13 +907,25 @@ def main() -> None:
             new_key = raw[10:].strip()
             if new_key.startswith("xai-"):
                 cfg["api_key"] = new_key
-                print(f"  {DIM}That's an xAI key — routed to the xAI slot. ✓{RESET}")
+                cfg["xai_live"] = None
+                sys.stdout.write(f"  {GOLD}Testing xAI...{RESET}  ")
+                sys.stdout.flush()
+                cfg["xai_live"] = _probe_xai(new_key)
+                print(f"{GREEN}connected ✓{RESET}" if cfg["xai_live"] else f"{RED}unreachable ✗{RESET}")
             elif new_key.startswith("sk-") and not new_key.startswith("sk-ant-"):
                 cfg["openai_key"] = new_key
-                print(f"  {DIM}That's an OpenAI key — routed to the OpenAI slot. ✓{RESET}")
+                cfg["openai_live"] = None
+                sys.stdout.write(f"  {GOLD}Testing OpenAI...{RESET}  ")
+                sys.stdout.flush()
+                cfg["openai_live"] = _probe_openai(new_key)
+                print(f"{GREEN}connected ✓{RESET}" if cfg["openai_live"] else f"{RED}unreachable ✗{RESET}")
             else:
                 cfg["anthropic_key"] = new_key
-                print(f"  {GREEN}Anthropic key set. ✓  Claude {RESET}is ready for code generation.")
+                cfg["claude_live"] = None
+                sys.stdout.write(f"  {GOLD}Testing Claude...{RESET}  ")
+                sys.stdout.flush()
+                cfg["claude_live"] = _probe_claude(new_key)
+                print(f"{GREEN}connected ✓{RESET}" if cfg["claude_live"] else f"{RED}unreachable ✗{RESET}")
             _print_header(cfg)
             continue
 
@@ -949,6 +1075,25 @@ def main() -> None:
             print(f"  Notes folder  : {path}/Cursiv/  (created on first export)")
             continue
 
+        # ── "hey X …" — manual model selection ─────────────────────────────
+        # Patterns: "hey grok ...", "hey claude ...", "hey chat ...",
+        #           "hey openai ...", "hey gpt ...", "hey ollama ..."
+        _force_provider = ""
+        _raw_lower = raw.lower()
+        for _prefix, _fp in (
+            ("hey grok ",   "grok"),
+            ("hey claude ", "claude"),
+            ("hey chat ",   "openai"),
+            ("hey openai ", "openai"),
+            ("hey gpt ",    "openai"),
+            ("hey ollama ", "ollama"),
+        ):
+            if _raw_lower.startswith(_prefix):
+                _force_provider = _fp
+                raw = raw[len(_prefix):].strip()   # strip the routing prefix
+                cmd = raw.lower()
+                break
+
         # ── Owner check (before Guardian — silent, no log) ─────────────────
         if _verify_sovereign_cli(raw):
             _unlock_cli(_CLI_SESSION_ID)
@@ -1047,14 +1192,19 @@ def main() -> None:
 
         else:
             # ── Normal single-model flow ─────────────────────────────────
+            if _force_provider:
+                _route_label = _force_provider.upper()
+            elif cfg.get("api_key"):
+                _route_label = "xAI"
+            elif cfg.get("openai_key"):
+                _route_label = "OpenAI"
+            elif cfg.get("anthropic_key"):
+                _route_label = "Claude"
+            else:
+                _route_label = "Ollama"
+
             if _cli_scan:
-                provider = (
-                    "xAI"     if cfg.get("api_key")        else
-                    "OpenAI"  if cfg.get("openai_key")     else
-                    "Claude"  if cfg.get("anthropic_key")  else
-                    "Ollama"
-                )
-                _cli_scan.routing(provider)
+                _cli_scan.routing(_route_label)
 
             sys.stdout.write(f"  {GOLD}{BOLD}✦{RESET}  {GOLD}AI{RESET}  ")
             sys.stdout.flush()
@@ -1070,6 +1220,7 @@ def main() -> None:
                     cfg["openai_key"],
                     cfg["confirm_mode"] == "confirm",
                     cfg["anthropic_key"],
+                    force_provider=_force_provider,
                 ):
                     combined = full_response + chunk
                     if WRITE_SENTINEL in combined:
@@ -1091,6 +1242,33 @@ def main() -> None:
 
             print()   # newline after streamed response
             print()
+
+            # ── Update live status from response ─────────────────────────
+            _old_xai    = cfg.get("xai_live")
+            _old_openai = cfg.get("openai_live")
+            _old_claude = cfg.get("claude_live")
+            _fr = full_response
+            if "[xAI auth error" in _fr:
+                cfg["xai_live"] = False
+            elif "xAI unavailable" in _fr or ("→" in _fr and "xAI" in _fr and "unavailable" in _fr):
+                cfg["xai_live"] = False
+            elif cfg.get("api_key") and not _force_provider and _fr and not _fr.startswith("*["):
+                cfg["xai_live"] = True
+            elif _force_provider == "grok" and _fr and "[No xAI" not in _fr:
+                cfg["xai_live"] = True
+            if "OpenAI unavailable" in _fr or ("[OpenAI error" in _fr and _force_provider != "openai"):
+                cfg["openai_live"] = False
+            elif _force_provider == "openai" and _fr and "[No OpenAI" not in _fr and "[OpenAI error" not in _fr:
+                cfg["openai_live"] = True
+            if "Claude unavailable" in _fr or ("[Claude error" in _fr and _force_provider != "claude"):
+                cfg["claude_live"] = False
+            elif _force_provider == "claude" and _fr and "[No Anthropic" not in _fr and "[Claude error" not in _fr:
+                cfg["claude_live"] = True
+            # Repaint header only when live status actually changed
+            if (cfg.get("xai_live") != _old_xai
+                    or cfg.get("openai_live") != _old_openai
+                    or cfg.get("claude_live") != _old_claude):
+                _print_header(cfg)
 
         # ── Handle pending write ─────────────────────────────────────────
         if pending_payload is not None:

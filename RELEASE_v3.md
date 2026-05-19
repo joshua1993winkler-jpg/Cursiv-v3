@@ -1,6 +1,45 @@
-# ⬡ Cursiv v3.0 Release
+# ⬡ Cursiv v3.14-U01 Release Notes
 
 > *"From the Dust, We Shape the Stars."*
+
+---
+
+## What's New in v3.14-U01
+
+### True Cascade Routing
+The system now tries each provider in strict order and falls through on failure — no more silent rerouting without explanation:
+- **xAI Grok-3 → OpenAI GPT-4.1 → Claude (Anthropic) → Ollama**
+- Fallback banners appear in the response: `*[xAI → OpenAI unavailable — Claude]*`
+- Terminal shortcut: type `hey grok`, `hey claude`, `hey chat`, or `hey ollama` at the start of any message to force that provider for one turn
+- Web app: provider dropdown (Auto / xAI Grok-3 / OpenAI GPT-4.1 / Claude / Ollama fully offline)
+
+### Live Status Chips
+Every API chip in the terminal now probes the actual endpoint on startup and after key entry:
+- GREEN `✓` = endpoint reachable and key valid
+- RED `✗` = key missing or endpoint unreachable
+- GOLD `?` = not yet probed this session
+- File access, Obsidian, and Guardian chips reflect real state — not just config presence
+
+### Password Reset via Security Questions
+- "Forgot Password?" button on the login screen
+- During account creation: prompted to choose 3 of 20 predefined questions and set answers
+- Answers normalised (lowercase, strip punctuation) and bcrypt-hashed before storage
+- Reset flow: enter username → answer 2-of-3 questions → set new password
+- "Security Questions" button in the launcher window and tray menu — set up at any time after login (existing accounts can add security questions without recreating the account)
+
+### Update Checker
+- "Check for Updates" button in the launcher window and tray menu
+- Queries the GitHub releases API in the background — no data sent; same privacy model as VS Code / Obsidian
+- If a newer version is found: shows a dialog with the release notes and a "Download & Install" button
+- Installer runs in-place (Inno Setup overwrites existing files without uninstalling — Ollama and your data are untouched)
+- Falls back gracefully to opening the releases page if download fails
+- **Never auto-updates.** You stay in control.
+
+### Gradio Web App — Offline-Safe Startup
+- Removed `GoogleFont` call from theme — was causing a network failure on offline startup
+- `analytics_enabled=False` — Gradio no longer phones home on launch
+- API keys auto-populate from `secrets.bat` environment variables on app load
+- Provider dropdown wired into cascade routing
 
 ---
 

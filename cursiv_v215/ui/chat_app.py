@@ -1119,8 +1119,12 @@ def _call_xai_stream(
                     except Exception:
                         pass
     except urllib.error.HTTPError as e:
-        yield RATE_SENTINEL
-    except Exception as e:
+        if e.code in (401, 403):
+            body = e.read().decode(errors="ignore")[:120]
+            yield f"[xAI auth error {e.code} — check your key: {body}]"
+        else:
+            yield RATE_SENTINEL
+    except Exception:
         yield RATE_SENTINEL
 
 
@@ -1808,97 +1812,106 @@ You are in full autonomous coding mode. Follow this protocol exactly:
         else:
             yield "[No OpenAI key set — type: openai sk-xxxxx]"
         return
+    elif fp == "ollama":
+        text_msgs = [
+            {"role": m["role"],
+             "content": m["content"] if isinstance(m["content"], str)
+                        else next((p["text"] for p in m["content"] if p["type"] == "text"), "")}
+            for m in messages
+        ]
+        yield from _call_ollama(text_msgs)
+        return
 
-    # ── Normal smart routing ─────────────────────────────────────────────
-    # Priority: xAI → OpenAI → Claude (code tool only, not primary conversation)
-    # Claude fires on write_file calls inside the tool loops — never as main router.
+    # ── Smart routing — cascade: xAI → OpenAI → Claude → Ollama ────────
+    # File-access paths use the best available tool-loop provider.
     if file_access and key:
-        # xAI tool loop — Claude/OpenAI enhance code writes internally
         yield from _call_xai_with_tools(messages, key, _workspace(), oai, has_images,
                                          confirm_writes=confirm_writes, anthropic_key=ant)
     elif file_access and oai:
-        # OpenAI tool loop — same format, no xAI key needed
         yield from _call_openai_with_tools(messages, oai, _workspace(),
                                             anthropic_key=ant,
                                             confirm_writes=confirm_writes)
     elif file_access and ant:
-        # Claude tool loop — last resort when only Anthropic key is set
         yield from _call_claude_with_tools(messages, ant, _workspace(),
                                             confirm_writes=confirm_writes,
                                             is_owner=_owner_active())
-    elif key:
-        # xAI primary — auto-fall through to Ollama on any failure
-        gen   = _call_xai_stream(messages, key, has_images)
-        first = next(gen, None)
-        if first == RATE_SENTINEL or first is None:
-            # xAI failed (no credits, no internet, etc.) — silently switch to Ollama
-            text_messages = [
-                {"role": m["role"],
-                 "content": m["content"] if isinstance(m["content"], str)
-                            else next((p["text"] for p in m["content"] if p["type"]=="text"), "")}
-                for m in messages
-            ]
-            ollama_gen = _call_ollama(text_messages)
-            first_ol   = next(ollama_gen, None)
-            if first_ol is not None:
-                yield "*[xAI unavailable — Ollama]*\n\n"
-                yield first_ol
-                yield from ollama_gen
-            else:
-                yield (
-                    "*[xAI unavailable and Ollama is not running.]*\n\n"
-                    "Start Ollama with `ollama run mistral` for offline use."
-                )
-        else:
-            yield first
-            for chunk in gen:
-                if chunk == RATE_SENTINEL:
-                    break
-                yield chunk
-    elif oai:
-        # OpenAI direct — second choice
-        yield from _call_openai_direct(messages, oai)
-    elif ant:
-        # Claude last resort — auto-fallback to Ollama when rate-limited
-        gen   = _call_claude_direct(messages, ant)
-        first = next(gen, None)
-        if first == RATE_SENTINEL:
-            text_messages = [
-                {"role": m["role"],
-                 "content": m["content"] if isinstance(m["content"], str)
-                            else next((p["text"] for p in m["content"] if p["type"]=="text"), "")}
-                for m in messages
-            ]
-            ollama_gen = _call_ollama(text_messages)
-            first_ol   = next(ollama_gen, None)
-            if first_ol is not None:
-                yield "*[Claude rate limit — Ollama]*\n\n"
-                yield first_ol
-                yield from ollama_gen
-            else:
-                yield "*[Claude rate limit exhausted and Ollama is not running.]*\n"
-        else:
-            if first is not None:
-                yield first
-            yield from gen
     else:
-        text_messages = [
-            {"role": m["role"],
-             "content": m["content"] if isinstance(m["content"], str)
-                        else next((p["text"] for p in m["content"] if p["type"]=="text"), "")}
-            for m in messages
-        ]
-        ollama_gen = _call_ollama(text_messages)
-        first = next(ollama_gen, None)
-        if first is not None:
-            yield first
+        # ── Cascade for plain chat: xAI → OpenAI → Claude → Ollama ──────
+        tried: list[str] = []
+
+        def _text_only(msgs):
+            return [
+                {"role": m["role"],
+                 "content": m["content"] if isinstance(m["content"], str)
+                            else next((p["text"] for p in m["content"] if p["type"] == "text"), "")}
+                for m in msgs
+            ]
+
+        # 1. xAI Grok
+        if key:
+            tried.append("xAI")
+            gen   = _call_xai_stream(messages, key, has_images)
+            first = next(gen, None)
+            if first not in (RATE_SENTINEL, None) and not (
+                isinstance(first, str) and first.startswith("[xAI auth")
+            ):
+                yield first
+                for chunk in gen:
+                    if chunk != RATE_SENTINEL:
+                        yield chunk
+                return
+            # xAI failed — continue cascade
+
+        # 2. OpenAI
+        if oai:
+            tried.append("OpenAI")
+            gen   = _call_openai_direct(messages, oai)
+            first = next(gen, None)
+            if first is not None and not (
+                isinstance(first, str) and first.lstrip().startswith("[OpenAI error")
+            ):
+                if len(tried) > 1:
+                    yield f"*[{' → '.join(tried[:-1])} unavailable — OpenAI]*\n\n"
+                yield first
+                yield from gen
+                return
+            # OpenAI failed — continue cascade
+
+        # 3. Claude
+        if ant:
+            tried.append("Claude")
+            gen   = _call_claude_direct(messages, ant)
+            first = next(gen, None)
+            if first not in (RATE_SENTINEL, None) and not (
+                isinstance(first, str) and first.lstrip().startswith("[Claude error")
+            ):
+                if len(tried) > 1:
+                    yield f"*[{' → '.join(tried[:-1])} unavailable — Claude]*\n\n"
+                yield first
+                yield from gen
+                return
+            # Claude failed — fall to Ollama
+
+        # 4. Ollama (always last)
+        ollama_gen = _call_ollama(_text_only(messages))
+        first_ol   = next(ollama_gen, None)
+        if first_ol is not None:
+            if tried:
+                yield f"*[{' → '.join(tried)} unavailable — Ollama]*\n\n"
+            yield first_ol
             yield from ollama_gen
         else:
-            yield (
-                "[No API key provided and Ollama is not running.]\n\n"
-                "**To connect xAI Grok:** paste your xAI API key in the key slot above.\n"
-                "**To run locally:** start Ollama with `ollama run mistral`."
-            )
+            if tried:
+                yield (
+                    f"*[{', '.join(tried)} unavailable and Ollama is not running.]*\n\n"
+                    "Start Ollama with `ollama run llama3.1` for offline use."
+                )
+            else:
+                yield (
+                    "[No API key provided and Ollama is not running.]\n\n"
+                    "**To connect xAI Grok:** paste your xAI API key in the key slot above.\n"
+                    "**To run locally:** start Ollama with `ollama run llama3.1`."
+                )
 
 
 # ── Status bar ────────────────────────────────────────────────────────────
@@ -1972,7 +1985,6 @@ def build_chat_app() -> gr.Blocks:
         primary_hue="blue",
         secondary_hue="yellow",
         neutral_hue="slate",
-        font=gr.themes.GoogleFont("EB Garamond"),
     )
 
     with gr.Blocks(title="Cursiv v3.0 — Main Chat") as app:
@@ -1993,20 +2005,30 @@ def build_chat_app() -> gr.Blocks:
             api_key_box = gr.Textbox(
                 label="xAI API Key  (main chat)",
                 placeholder="xai-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                value=os.environ.get("XAI_API_KEY", ""),
                 type="password",
                 scale=3,
             )
             openai_key_box = gr.Textbox(
                 label="OpenAI API Key  (code gen fallback)",
                 placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                value=os.environ.get("OPENAI_API_KEY", ""),
                 type="password",
                 scale=3,
             )
             anthropic_key_box = gr.Textbox(
                 label="Anthropic API Key  (Claude code gen — priority over OpenAI)",
                 placeholder="sk-ant-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                value=os.environ.get("ANTHROPIC_API_KEY", ""),
                 type="password",
                 scale=3,
+            )
+        with gr.Row():
+            provider_dd = gr.Dropdown(
+                label="Provider",
+                choices=["Auto (cascade)", "xAI Grok-3", "OpenAI GPT-4.1", "Claude (Anthropic)", "Ollama (fully offline)"],
+                value="Auto (cascade)",
+                scale=2,
             )
         with gr.Column(scale=6):
             status_md = gr.Markdown(
@@ -2120,7 +2142,7 @@ def build_chat_app() -> gr.Blocks:
             )
 
         # ── Streaming submit ─────────────────────────────────────────────
-        def _submit(message, history, api_key, openai_key, anthropic_key, file_access, root_path, confirm_mode):
+        def _submit(message, history, api_key, openai_key, anthropic_key, file_access, root_path, confirm_mode, provider):
             if not message or (isinstance(message, dict) and not message.get("text") and not message.get("files")):
                 yield history, gr.update(), None, gr.update(), gr.update()
                 return
@@ -2135,8 +2157,17 @@ def build_chat_app() -> gr.Blocks:
             do_confirm      = confirm_mode == "confirm"
             pending_payload = None
 
+            _provider_map = {
+                "xAI Grok-3":          "grok",
+                "OpenAI GPT-4.1":      "openai",
+                "Claude (Anthropic)":  "claude",
+                "Ollama (fully offline)": "ollama",
+            }
+            force_provider = _provider_map.get(provider or "", "")
+
             for chunk in chat(message, history[:-2], api_key, None,
-                              file_access, root_path, openai_key, do_confirm, anthropic_key):
+                              file_access, root_path, openai_key, do_confirm, anthropic_key,
+                              force_provider=force_provider):
 
                 if WRITE_SENTINEL in (full_response + chunk):
                     combined        = full_response + chunk
@@ -2163,8 +2194,8 @@ def build_chat_app() -> gr.Blocks:
             # ── Post-exchange: session log + Obsidian livestream ──────────
             if user_text and full_response:
                 model_used = (
-                    "claude"  if ant and _classify_message(user_text) == "code" and not file_access
-                    else "gpt-4.1" if oai and not ant and _classify_message(user_text) == "code" and not file_access
+                    "claude"  if anthropic_key and _classify_message(user_text) == "code" and not file_access
+                    else "gpt-4.1" if openai_key and not anthropic_key and _classify_message(user_text) == "code" and not file_access
                     else "grok"
                 )
                 try:
@@ -2215,7 +2246,7 @@ def build_chat_app() -> gr.Blocks:
         msg_box.submit(
             fn=_submit,
             inputs=[msg_box, chatbot, api_key_box, openai_key_box, anthropic_key_box,
-                    file_access_toggle, root_path_box, confirm_mode_state],
+                    file_access_toggle, root_path_box, confirm_mode_state, provider_dd],
             outputs=[chatbot, msg_box, pending_write_state, confirm_group, confirm_path_md],
         )
 
@@ -2325,4 +2356,6 @@ if __name__ == "__main__":
         theme=theme,
         css=CHAT_CSS,
         js=HOTKEY_JS,
+        analytics_enabled=False,
+        show_api=False,
     )

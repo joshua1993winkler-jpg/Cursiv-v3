@@ -1,4 +1,4 @@
-# ⬡ Cursiv v3.14 — Offline. Yours. Everywhere.
+# ⬡ Cursiv v3.14-U01 — Offline. Yours. Everywhere.
 
 > Not OpenAI. Not xAI. Not a subscription. A piece of AI infrastructure that lives on your machine, runs without the internet, and belongs entirely to you.
 
@@ -44,7 +44,7 @@ The goal is simple: **reduce the percentage of chance that our future generation
 
 ## Download & Install
 
-**[Download Cursiv-Setup-3.14.exe](https://github.com/joshua1993winkler-jpg/Cursiv-v3/releases/latest)**
+**[Download Cursiv-Setup-3.14-U01.exe](https://github.com/joshua1993winkler-jpg/Cursiv/releases/latest)**
 
 Double-click the installer. Click through the wizard. Done.
 
@@ -67,7 +67,7 @@ After the installer finishes, a **second window opens automatically** and downlo
 
 Double-click **Cursiv** on your desktop.
 
-**First time:** create a username and password — stored locally, never sent anywhere.
+**First time:** create a username and password — stored locally, never sent anywhere. You'll also be prompted to set 3 security questions so you can reset your password if you ever forget it.
 
 Four screens open:
 
@@ -109,7 +109,7 @@ Cursiv works offline with llama3.1. If you want larger cloud models, add your ke
 - **OpenAI GPT-4.1** — [platform.openai.com](https://platform.openai.com)
 - **Anthropic Claude** — [console.anthropic.com](https://console.anthropic.com)
 
-The system tries Ollama first, always. Cloud models only activate if you ask for them or Ollama is unavailable.
+The system routes in strict cascade order: **xAI Grok-3 → OpenAI GPT-4.1 → Claude → Ollama**. Each provider is tried in sequence; if one fails, the next activates automatically with a banner showing the path taken. You can also force a specific model for any single message by typing `hey grok`, `hey claude`, `hey chat`, or `hey ollama` at the start of your message in the terminal. The web app has a provider dropdown for the same control.
 
 <br>
 
