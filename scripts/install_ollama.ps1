@@ -157,6 +157,42 @@ if (Is-ModelPresent $OLLAMA_MODEL) {
     }
 }
 
+# ── Step 4: Pull Code Council models (optional, user prompted) ───────────────
+Write-Host ""
+Write-Host "  ┌──────────────────────────────────────────────────┐" -ForegroundColor DarkYellow
+Write-Host "  │  Optional: Offline Code Council                   │" -ForegroundColor DarkYellow
+Write-Host "  │  Two specialist coding models that review each    │" -ForegroundColor DarkYellow
+Write-Host "  │  other's work for higher-quality code output.     │" -ForegroundColor DarkYellow
+Write-Host "  │                                                    │" -ForegroundColor DarkYellow
+Write-Host "  │  qwen2.5-coder:14b   — primary coder   (~8.7 GB) │" -ForegroundColor DarkYellow
+Write-Host "  │  deepseek-coder-v2:16b — critic/review (~9.1 GB) │" -ForegroundColor DarkYellow
+Write-Host "  │                                                    │" -ForegroundColor DarkYellow
+Write-Host "  │  Total: ~18 GB additional storage needed.         │" -ForegroundColor DarkYellow
+Write-Host "  │  Cursiv works fine without them (uses llama3.1).  │" -ForegroundColor DarkYellow
+Write-Host "  └──────────────────────────────────────────────────┘" -ForegroundColor DarkYellow
+Write-Host ""
+$installCode = Read-Host "  Download Code Council models now? [Y/N]"
+if ($installCode -match "^[Yy]") {
+    foreach ($codeModel in @("qwen2.5-coder:14b", "deepseek-coder-v2:16b")) {
+        if (Is-ModelPresent $codeModel) {
+            Write-OK "$codeModel already present."
+        } else {
+            Write-Step "Pulling $codeModel (this will take a while)..."
+            & ollama pull $codeModel
+            if ($LASTEXITCODE -eq 0) {
+                Write-OK "$codeModel ready."
+            } else {
+                Write-Warn "Pull failed — run manually: ollama pull $codeModel"
+            }
+        }
+    }
+    Write-OK "Code Council models installed. Cursiv will use them automatically for coding questions."
+} else {
+    Write-Host "  Skipped. To install later, run in a terminal:" -ForegroundColor DarkGray
+    Write-Host "    ollama pull qwen2.5-coder:14b" -ForegroundColor White
+    Write-Host "    ollama pull deepseek-coder-v2:16b" -ForegroundColor White
+}
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "  ╔══════════════════════════════════════════════════╗" -ForegroundColor Green

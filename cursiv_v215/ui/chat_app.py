@@ -183,7 +183,10 @@ XAI_URL        = "https://api.x.ai/v1/chat/completions"
 XAI_MODEL      = "grok-3-latest"
 XAI_MODEL_VIS  = "grok-2-vision-1212"   # vision-capable model for images
 OLLAMA_URL         = "http://localhost:11434/api/generate"
+OLLAMA_TAGS_URL    = "http://localhost:11434/api/tags"
 OLLAMA_MODEL       = "llama3.1"
+OLLAMA_CODE_PRIMARY   = "qwen2.5-coder:14b"    # primary coder — architecture + logic
+OLLAMA_CODE_SECONDARY = "deepseek-coder-v2:16b" # critic/reviewer — debugging + synthesis
 
 # ── OpenAI endpoint (Codex / code review) ──────────────────────────────────
 OPENAI_URL         = "https://api.openai.com/v1/chat/completions"
@@ -1080,6 +1083,117 @@ def _call_ollama(messages: list[dict], max_tokens: int = 1200) -> Generator[str,
         yield f"\n[Ollama unavailable: {e}]"
 
 
+def _ollama_pulled_models() -> set[str]:
+    """Return set of model name tags currently pulled in Ollama."""
+    try:
+        req = urllib.request.Request(OLLAMA_TAGS_URL)
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+        names = set()
+        for m in data.get("models", []):
+            tag = m.get("name", "")
+            names.add(tag)
+            names.add(tag.split(":")[0])
+        return names
+    except Exception:
+        return set()
+
+
+def _call_ollama_model(
+    model: str,
+    system_str: str,
+    prompt: str,
+    max_tokens: int = 2000,
+    collect: bool = False,
+) -> Generator[str, None, None]:
+    """Call a specific Ollama model. If collect=True, yields one final chunk (full text)."""
+    import json as _json
+    payload = json.dumps({
+        "model":  model,
+        "system": system_str,
+        "prompt": prompt,
+        "stream": not collect,
+        "options": {"num_predict": max_tokens, "num_ctx": 8192},
+    }).encode()
+    try:
+        req = urllib.request.Request(
+            OLLAMA_URL, data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            if collect:
+                data = _json.loads(resp.read().decode())
+                yield data.get("response", "")
+            else:
+                for line in resp:
+                    chunk = _json.loads(line.decode())
+                    token = chunk.get("response", "")
+                    if token:
+                        yield token
+                    if chunk.get("done"):
+                        break
+    except Exception as e:
+        yield f"\n[{model} error: {e}]"
+
+
+def _call_ollama_code_council(
+    messages: list[dict],
+    max_tokens: int = 2000,
+) -> Generator[str, None, None]:
+    """
+    Dual-model offline Code Council:
+      Phase 1 — qwen2.5-coder:14b writes the primary solution (streamed live)
+      Phase 2 — deepseek-coder-v2:16b reviews and improves it (streamed live)
+    Falls back to llama3.1 if neither coding model is pulled.
+    """
+    available    = _ollama_pulled_models()
+    has_qwen     = OLLAMA_CODE_PRIMARY   in available or "qwen2.5-coder" in available
+    has_deepseek = OLLAMA_CODE_SECONDARY in available or "deepseek-coder-v2" in available
+
+    if not has_qwen and not has_deepseek:
+        yield from _call_ollama(messages, max_tokens)
+        return
+
+    system_parts = [
+        m["content"] for m in messages
+        if m.get("role") == "system" and isinstance(m.get("content"), str)
+    ]
+    system_str = "\n\n".join(system_parts)
+    turns = "\n".join(
+        f"{'Human' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
+        for m in messages
+        if m.get("role") in ("user", "assistant") and isinstance(m.get("content"), str)
+    )
+
+    primary_model   = OLLAMA_CODE_PRIMARY   if has_qwen     else OLLAMA_CODE_SECONDARY
+    secondary_model = OLLAMA_CODE_SECONDARY if has_deepseek and has_qwen else None
+
+    # ── Phase 1: Primary coder writes solution ───────────────────────────
+    if secondary_model:
+        yield f"**[{primary_model}]** Writing solution...\n\n"
+
+    primary_chunks: list[str] = []
+    for token in _call_ollama_model(primary_model, system_str, turns, max_tokens):
+        primary_chunks.append(token)
+        yield token
+
+    if not secondary_model:
+        return
+
+    # ── Phase 2: Critic reviews and improves ────────────────────────────
+    primary_text = "".join(primary_chunks)
+    yield f"\n\n---\n**[{secondary_model}]** Code review...\n\n"
+
+    review_prompt = (
+        f"{turns}\n\n"
+        f"A colleague produced this solution:\n\n{primary_text}\n\n"
+        "Review it critically. If it is correct and clean, confirm briefly and add any meaningful "
+        "improvements or edge-case handling. If there are bugs or a clearly better approach, "
+        "rewrite only the affected parts. Be concise — do not repeat what is already correct."
+    )
+    yield from _call_ollama_model(secondary_model, system_str, review_prompt, max_tokens)
+
+
 def _call_xai_stream(
     messages: list[dict],
     api_key: str,
@@ -1922,12 +2036,15 @@ You are in full autonomous coding mode. Follow this protocol exactly:
                 return
             # Claude failed — fall to Ollama
 
-        # 4. Ollama (always last)
-        ollama_gen = _call_ollama(_text_only(messages))
+        # 4. Ollama — use Code Council for code questions, standard for everything else
+        _is_code = _classify_message(user_text) == "code"
+        _ollama_fn = _call_ollama_code_council if _is_code else _call_ollama
+        ollama_gen = _ollama_fn(_text_only(messages))
         first_ol   = next(ollama_gen, None)
         if first_ol is not None:
             if tried:
-                yield f"*[{' → '.join(tried)} unavailable — Ollama]*\n\n"
+                _label = "Code Council" if _is_code else "Ollama"
+                yield f"*[{' → '.join(tried)} unavailable — {_label}]*\n\n"
             yield first_ol
             yield from ollama_gen
         else:
