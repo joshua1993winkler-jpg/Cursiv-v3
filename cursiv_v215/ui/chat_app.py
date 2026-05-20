@@ -2632,7 +2632,7 @@ You are in full autonomous coding mode. Follow this protocol exactly:
         return
 
     elif fp == "council":
-        raw = msg_text.strip()
+        raw = user_text.strip()
         _sys_ctx = "\n\n".join(
             m["content"] for m in messages
             if m.get("role") == "system" and isinstance(m.get("content"), str)
