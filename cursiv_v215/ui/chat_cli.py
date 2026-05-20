@@ -1023,7 +1023,7 @@ def main() -> None:
                 else:
                     print(f"  {LGOLD}[Codex Agent — deliberating…]{RESET}")
                     result = _codex_gen_cli(prompt)
-                    _print_msg("assistant", result, cfg)
+                    _print_ai_msg(result)
                     _session_append_cli(prompt, result, "codex_agent")
             continue
 
@@ -1038,7 +1038,7 @@ def main() -> None:
                 else:
                     print(f"  {LGOLD}[Hermes Agent — running on llama3.1…]{RESET}")
                     result = _hermes_run_cli(prompt)
-                    _print_msg("assistant", result, cfg)
+                    _print_ai_msg(result)
                     _session_append_cli(prompt, result, "hermes_agent")
             continue
 
@@ -1442,7 +1442,7 @@ def main() -> None:
                     print(f"  {LGOLD}Usage:{RESET}  {DIM}ref <what to look up>{RESET}")
                 else:
                     result = _ref_answer_cli(query)
-                    _print_msg("assistant", result, cfg)
+                    _print_ai_msg(result)
             continue
 
         elif cmd == "queue" or cmd.startswith("queue "):
