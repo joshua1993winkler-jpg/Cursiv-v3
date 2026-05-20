@@ -135,6 +135,22 @@ except Exception:
     def _session_get_last():                    return None
     _RATED_JSONL = Path(ROOT) / ".cursiv" / "rated_exchanges.jsonl"
 
+# ── Voice Agent — local mic → PCM → Vosk decode → text (no LLM, no cloud) ─
+try:
+    from cursiv_v215.agents.voice_agent import (
+        listen       as _voice_listen,
+        is_available as _voice_avail,
+        backend_name as _voice_backend,
+        SAMPLE_RATE  as _VOICE_SR,
+    )
+    _VOICE_OK = True
+except Exception:
+    _VOICE_OK = False
+    def _voice_listen(duration_s=5.0, status_cb=None) -> str: return ""
+    def _voice_avail() -> bool:   return False
+    def _voice_backend() -> str:  return "none"
+    _VOICE_SR = 16000
+
 # ── Codex Agent — offline-capable coding specialist ──────────────────────
 try:
     from cursiv_v215.agents.codex_agent import (
@@ -568,6 +584,7 @@ _TIPS: list[tuple[str, str]] = [
     ("council <question>",    "3-cycle multi-provider synthesis — all seeing eye"),
     ("anchor this",           "save last exchange as a permanent Strand"),
     ("babel <text>",          "translate any language → English via binary"),
+    ("listen  /  listen 8",   "mic → local Vosk decode → text, no LLM, no cloud"),
     ("image <prompt>",        "generate image with DALL-E 3"),
     ("paste",                 "paste clipboard image → vision analysis → Strand"),
     ("remember <query>",      "search your Strand archive, zero cloud, zero API"),
@@ -723,6 +740,13 @@ _HELP = f"""\
                             "who won", "price of", "breaking" etc.
                             Uses Brave Search API if BRAVE_API_KEY is set,
                             DuckDuckGo otherwise (free, no key needed)
+
+  {GOLD}── Voice Agent (mic → local decode → text, no cloud) ────────────{RESET}
+  {LGOLD}listen{RESET}                    record 5s from mic, decode locally via Vosk, send as message
+  {LGOLD}listen <seconds>{RESET}          custom duration  (e.g.  listen 10)
+                            Requires:  pip install vosk sounddevice
+                            First use auto-downloads Vosk model (~40 MB, one time only)
+                            No API call. No cloud. Same local-decode logic as Babel.
 
   {GOLD}── Babel Agent (any language → binary → English) ────────────────{RESET}
   {LGOLD}babel <text>{RESET}              encode any language to UTF-8 binary,
@@ -1425,6 +1449,53 @@ def main() -> None:
                 else:
                     print(f"  {LGOLD}Usage:{RESET}  {DIM}queue list  |  queue add <task>{RESET}")
             continue
+
+        # ── listen — mic → local Vosk decode → text → send as message ────
+        # Same architecture as Babel: raw bytes → local decoder → Unicode.
+        # No LLM, no API, no cloud. Audio never leaves the machine.
+        elif cmd == "listen" or cmd.startswith("listen "):
+            if not _VOICE_OK:
+                print(f"  {RED}Voice agent failed to load.{RESET}")
+                continue
+            if not _voice_avail():
+                print(f"  {RED}No audio capture library.{RESET}  "
+                      f"{DIM}pip install vosk sounddevice{RESET}")
+                continue
+
+            # Optional duration:  listen 8  (default 5s)
+            duration = 5.0
+            try:
+                _dur_part = cmd.split(None, 1)[1].strip() if " " in cmd else ""
+                if _dur_part.isdigit():
+                    duration = max(1.0, min(float(_dur_part), 30.0))
+            except Exception:
+                pass
+
+            def _voice_status(msg: str) -> None:
+                print(f"  {LGOLD}{msg}{RESET}")
+
+            print(f"\n  {GOLD}⬡ Voice — local decode{RESET}  "
+                  f"{DIM}mic → PCM → Vosk → text  ·  {_voice_backend()}{RESET}")
+            print(f"  {GOLD}🎙 Listening {duration:.0f}s…{RESET}  {DIM}speak now{RESET}\n")
+            try:
+                _heard = _voice_listen(duration_s=duration, status_cb=_voice_status)
+            except RuntimeError as _ve:
+                print(f"  {RED}{_ve}{RESET}\n")
+                continue
+            except Exception as _ve:
+                print(f"  {RED}Voice error: {_ve}{RESET}\n")
+                continue
+
+            if not _heard:
+                print(f"  {DIM}Nothing heard — adjust mic or try again.{RESET}\n")
+                continue
+
+            print(f"  {CREAM}{_heard}{RESET}\n")
+            # Inject the transcription as the user's next message — drop into
+            # main flow by setting raw and falling through to the model call
+            raw = _heard
+            cmd = raw.lower()
+            # (falls through to "Send to model" below)
 
         # ── Paste image from clipboard → vision analysis → strand ────────
         elif cmd == "paste":
