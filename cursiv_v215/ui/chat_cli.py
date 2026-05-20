@@ -196,6 +196,9 @@ try:
         make_letter_pin_hash as _legacy_make_pin_hash,
         verify_letter_pin    as _legacy_verify_letter_pin,
         name_to_key          as _legacy_name_to_key,
+        export_pack          as _legacy_export_pack,
+        import_pack          as _legacy_import_pack,
+        open_folder          as _legacy_open_folder,
     )
     _LEGACY_OK = True
 except Exception:
@@ -210,6 +213,9 @@ except Exception:
     def _legacy_make_pin_hash(p):              return ""
     def _legacy_verify_letter_pin(i, p):       return False
     def _legacy_name_to_key(n):                return n.lower().split()[0]
+    def _legacy_export_pack(k, d):             return (Path("."), 0)
+    def _legacy_import_pack(f):                return (0, [])
+    def _legacy_open_folder(p):               pass
 
 # ── Code Sentinel — prompt injection + dangerous pattern guard ────────────
 try:
@@ -2390,6 +2396,35 @@ def main() -> None:
             # Babel runs as a one-shot tool — not added to main conversation history
             continue
 
+        # ── Legacy import (top-level, no auth — Joshua only) ─────────────────
+        elif cmd.startswith("legacy import "):
+            _imp_path = raw[14:].strip().strip('"').strip("'")
+            if not _imp_path:
+                print(f"  {LGOLD}Usage:{RESET}  {DIM}legacy import <path to .legacypack file>{RESET}")
+                continue
+            print(f"\n  {GOLD}⬡ Legacy Import{RESET}  {DIM}{Path(_imp_path).name}{RESET}\n")
+            try:
+                _imp_count, _imp_skip = _legacy_import_pack(_imp_path)
+                if _imp_count == 0 and not _imp_skip:
+                    print(f"  {DIM}No letters found in pack.{RESET}")
+                else:
+                    if _imp_count:
+                        print(f"  {GREEN}✦ Imported {_imp_count} letter(s).{RESET}")
+                    if _imp_skip:
+                        print(f"  {DIM}Skipped {len(_imp_skip)} duplicate(s):{RESET}")
+                        for _sk in _imp_skip:
+                            print(f"  {DIM}  · {_sk}{RESET}")
+                    print()
+                    print(f"  {SILV2}Letters are now in the vault.{RESET}")
+                    print(f"  {SILV2}Commit and push whenever ready:{RESET}  "
+                          f"{LGOLD}git add .cursiv && git commit -m 'vault' && git push{RESET}")
+            except (FileNotFoundError, ValueError) as _ie:
+                print(f"  {RED}{_ie}{RESET}")
+            except Exception as _ie:
+                print(f"  {RED}Import failed: {_ie}{RESET}")
+            print()
+            continue
+
         # ── Legacy Guardian — family letter vault ────────────────────────────
         elif cmd.startswith("legacy") and (cmd == "legacy" or cmd[6] in (" ", ":")):
             _leg_raw_input = raw[7:].strip() if len(raw) > 7 else ""
@@ -2473,11 +2508,29 @@ def main() -> None:
                           f"{DIM}· {_lsb} · {_ldt}{RESET}")
                 print()
 
-            print(f"  {DIM}Commands:{RESET}  "
-                  f"{LGOLD}read <n>{RESET}  "
-                  f"{LGOLD}write{RESET}  "
-                  f"{LGOLD}my <n> read/edit/delete{RESET}  "
-                  f"{LGOLD}done{RESET}")
+            print(f"  {GOLD}{'─' * 62}{RESET}")
+            print(f"  {LGOLD}How it works:{RESET}")
+            print(f"  {SILV2}This vault holds letters written by people who love you.{RESET}")
+            print(f"  {SILV2}Read them at your own pace. The council walks with you after.{RESET}")
+            print(f"  {SILV2}You can also write letters here for others — export and send{RESET}")
+            print(f"  {SILV2}to Joshua. He imports them so your recipients find them waiting.{RESET}")
+            print()
+            print(f"  {LGOLD}Commands:{RESET}")
+            print(f"  {LGOLD}read <n>{RESET}             open a letter waiting for you")
+            print(f"  {LGOLD}write{RESET}                write a new letter for someone")
+            print(f"  {LGOLD}export{RESET}               package your letters → saves to Desktop")
+            print(f"  {LGOLD}my <n> read{RESET}          re-read a letter you wrote  {DIM}(1 confirm){RESET}")
+            print(f"  {LGOLD}my <n> edit{RESET}          rewrite a letter you wrote  {DIM}(2 confirms){RESET}")
+            print(f"  {LGOLD}my <n> delete{RESET}        delete a letter permanently  {DIM}(4 confirms){RESET}")
+            print(f"  {LGOLD}done{RESET}                 return to main session")
+            print()
+            print(f"  {DIM}Example — reading a letter:{RESET}")
+            print(f"  {SILV2}read 1{RESET}  {DIM}→ opens the first letter waiting for you{RESET}")
+            print(f"  {DIM}Example — writing:{RESET}")
+            print(f"  {SILV2}write{RESET}  {DIM}→ walks you through composing + saving{RESET}")
+            print(f"  {DIM}Example — sending to Joshua:{RESET}")
+            print(f"  {SILV2}export{RESET}  {DIM}→ drops a .legacypack file on your Desktop, attach to email{RESET}")
+            print(f"  {GOLD}{'─' * 62}{RESET}")
             print()
 
             # ── Legacy mini-loop ──────────────────────────────────────────
@@ -2776,6 +2829,29 @@ def main() -> None:
                         print(f"  {GOLD}Code set. Share it with {_wfor_display} directly.{RESET}")
                     print()
                     _leg_outbox = _legacy_letters_by(_leg_key)
+
+                # ── export — pack letters to Desktop ──────────────────────
+                elif _lcmd == "export":
+                    if not _leg_outbox:
+                        print(f"  {DIM}You haven't written any letters yet. Use  write  to start.{RESET}")
+                        continue
+                    print(f"\n  {DIM}Packaging {len(_leg_outbox)} letter(s)…{RESET}")
+                    try:
+                        _exp_path, _exp_count = _legacy_export_pack(_leg_key, _leg_display)
+                        if _exp_count == 0:
+                            print(f"  {DIM}Nothing to export.{RESET}")
+                        else:
+                            print(f"\n  {GREEN}✦ Export saved — {_exp_count} letter(s){RESET}")
+                            print(f"  {LGOLD}File:{RESET}  {CREAM}{_exp_path.name}{RESET}")
+                            print(f"  {LGOLD}Location:{RESET}  {DIM}{_exp_path.parent}{RESET}")
+                            print()
+                            print(f"  {SILV2}Your file is waiting in the folder above.{RESET}")
+                            print(f"  {SILV2}Attach it to an email and send to Joshua.{RESET}")
+                            print(f"  {SILV2}He runs the import and your letters are live.{RESET}")
+                            print()
+                            _legacy_open_folder(_exp_path)
+                    except Exception as _exp_err:
+                        print(f"  {RED}Export failed: {_exp_err}{RESET}")
 
                 # ── my <n> read / edit / delete ───────────────────────────
                 elif _lcmd.startswith("my "):

@@ -205,3 +205,126 @@ def verify_letter_pin(letter_id: str, pin: str) -> bool:
 def name_to_key(display_name: str) -> str:
     """Turn a display name into a lowercase slug for use as a key."""
     return re.sub(r"[^a-z0-9]", "", display_name.lower().split()[0])
+
+
+# ── Pack export / import ──────────────────────────────────────────────────────
+
+def export_destination() -> Path:
+    """
+    Find the best place to drop an export file so it's immediately visible.
+    Priority: Desktop → OneDrive Desktop → Downloads → home directory.
+    """
+    home = Path.home()
+    for candidate in (
+        home / "Desktop",
+        home / "OneDrive" / "Desktop",
+        home / "OneDrive - Personal" / "Desktop",
+        home / "Downloads",
+    ):
+        if candidate.exists():
+            return candidate
+    return home
+
+
+def export_pack(author_key: str, author_display: str) -> tuple[Path, int]:
+    """
+    Bundle all letters written by author_key into a .legacypack file on
+    the Desktop (or Downloads). Returns (filepath, letter_count).
+    """
+    letters = letters_written_by(author_key)
+    if not letters:
+        return Path(), 0
+
+    payload: list[dict] = []
+    for entry in letters:
+        content = get_letter_content(entry["id"])
+        payload.append({
+            "from_key":     entry["from_key"],
+            "from_display": entry["from_display"],
+            "for_key":      entry["for_key"],
+            "for_display":  entry["for_display"],
+            "subject":      entry["subject"],
+            "written":      entry["written"],
+            "revised":      entry.get("revised", ""),
+            "access_type":  entry["access_type"],
+            "content":      content or "",
+        })
+
+    pack = {
+        "cursiv_legacy_pack": True,
+        "version":            "1.0",
+        "exported_by":        author_key,
+        "exported_by_display": author_display,
+        "exported_at":        datetime.now().isoformat(),
+        "letter_count":       len(payload),
+        "letters":            payload,
+    }
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename  = f"legacy_from_{author_key}_{timestamp}.legacypack"
+    dest      = export_destination() / filename
+    dest.write_text(json.dumps(pack, indent=2, ensure_ascii=False), encoding="utf-8")
+    return dest, len(payload)
+
+
+def import_pack(filepath: str | Path) -> tuple[int, list[str]]:
+    """
+    Import a .legacypack file into the local vault.
+    Returns (imported_count, list_of_skipped_ids).
+    Skips duplicates (same from_key + for_key + written timestamp).
+    """
+    path = Path(filepath)
+    if not path.exists():
+        raise FileNotFoundError(f"Pack file not found: {filepath}")
+
+    try:
+        pack = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise ValueError(f"Could not read pack file: {e}")
+
+    if not pack.get("cursiv_legacy_pack"):
+        raise ValueError("Not a valid Cursiv Legacy Pack.")
+
+    existing = _load_index()
+    existing_sigs = {
+        (e["from_key"], e["for_key"], e.get("written", ""))
+        for e in existing
+    }
+
+    imported = 0
+    skipped: list[str] = []
+
+    for letter in pack.get("letters", []):
+        sig = (letter.get("from_key", ""), letter.get("for_key", ""), letter.get("written", ""))
+        if sig in existing_sigs:
+            skipped.append(f"{letter.get('from_display','?')} → {letter.get('for_display','?')}")
+            continue
+
+        save_letter(
+            from_key     = letter.get("from_key", "unknown"),
+            from_display = letter.get("from_display", "Unknown"),
+            for_key      = letter.get("for_key", "unknown"),
+            for_display  = letter.get("for_display", "Unknown"),
+            subject      = letter.get("subject", "(no subject)"),
+            content      = letter.get("content", ""),
+            access_type  = letter.get("access_type", "babel_pin"),
+            access_hash  = "",
+        )
+        imported += 1
+
+    return imported, skipped
+
+
+def open_folder(path: Path) -> None:
+    """Open the folder containing path in the system file manager."""
+    import subprocess, sys as _sys
+    folder = path.parent if path.is_file() else path
+    try:
+        if _sys.platform == "win32":
+            subprocess.Popen(["explorer", str(folder)])
+        elif _sys.platform == "darwin":
+            subprocess.Popen(["open", str(folder)])
+        else:
+            subprocess.Popen(["xdg-open", str(folder)])
+    except Exception:
+        pass
