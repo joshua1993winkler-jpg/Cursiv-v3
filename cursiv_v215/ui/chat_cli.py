@@ -58,12 +58,15 @@ from cursiv_v215.ui.chat_app import (
 
 try:
     from cursiv_v215.agents.babel_agent import (
-        encode_to_binary   as _babel_encode,
-        decode_from_binary as _babel_decode,
-        format_binary_block as _babel_fmt,
-        BABEL_SYSTEM       as _BABEL_SYSTEM,
-        is_babel_command   as _babel_detect,
-        extract_babel_input as _babel_input,
+        encode_to_binary        as _babel_encode,
+        decode_from_binary      as _babel_decode,
+        format_binary_block     as _babel_fmt,
+        BABEL_SYSTEM            as _BABEL_SYSTEM,
+        is_babel_command        as _babel_detect,
+        extract_babel_input     as _babel_input,
+        is_rtl_script           as _babel_is_rtl,
+        detect_script           as _babel_detect_script,
+        reorder_rtl_for_display as _babel_rtl_reorder,
     )
     _BABEL_OK = True
 except Exception:
@@ -717,6 +720,7 @@ _HELP = f"""\
   {LGOLD}strand import <file>{RESET}      Guardian-verified, human-approved import from a pack file
   {LGOLD}remember <query>{RESET}          pure local memory search — zero cloud, zero API
   {LGOLD}pull <url>{RESET}                fetch + analyze any URL → auto-strand the insight
+  {LGOLD}image <description>{RESET}       generate image via DALL-E 3 → saves + opens + strands
                             Council syntheses auto-anchor at quality > 0.75
 
   {GOLD}── FunForge (bounded creative spike) ───────────────────────────{RESET}
@@ -1390,6 +1394,78 @@ def main() -> None:
                     print(f"  {LGOLD}Usage:{RESET}  {DIM}queue list  |  queue add <task>{RESET}")
             continue
 
+        # ── Image generation (DALL-E 3 via OpenAI key) ───────────────────
+        elif cmd.startswith("image ") or cmd == "image":
+            prompt = raw[6:].strip() if cmd.startswith("image ") else ""
+            if not prompt:
+                print(f"  {LGOLD}Usage:{RESET}  {DIM}image <description>{RESET}")
+                print(f"  {DIM}Example:  image a futuristic city at night, neon rain, cinematic{RESET}")
+                continue
+            if not cfg.get("openai_key"):
+                print(f"  {RED}No OpenAI key — image generation requires DALL-E 3.{RESET}")
+                print(f"  {DIM}Set key:  openai sk-...{RESET}")
+                continue
+            print(f"\n  {GOLD}⬡ Image Generation{RESET}  {DIM}DALL-E 3 · {prompt[:60]}{'...' if len(prompt)>60 else ''}{RESET}\n")
+            try:
+                import openai as _oai_img
+                import urllib.request as _img_req
+                import os as _img_os
+                from pathlib import Path as _ImgPath
+                from datetime import datetime as _ImgDt
+
+                _img_client = _oai_img.OpenAI(api_key=cfg["openai_key"])
+                sys.stdout.write(f"  {DIM}Generating...{RESET}")
+                sys.stdout.flush()
+
+                _img_resp = _img_client.images.generate(
+                    model="dall-e-3",
+                    prompt=prompt,
+                    size="1024x1024",
+                    quality="standard",
+                    n=1,
+                )
+                _img_url      = _img_resp.data[0].url
+                _revised      = getattr(_img_resp.data[0], "revised_prompt", prompt)
+
+                # Save to .cursiv/images/
+                _img_dir = _ImgPath(".cursiv") / "images"
+                _img_dir.mkdir(parents=True, exist_ok=True)
+                _img_ts   = _ImgDt.now().strftime("%Y%m%d_%H%M%S")
+                _img_path = _img_dir / f"image_{_img_ts}.png"
+
+                _img_req.urlretrieve(_img_url, str(_img_path))
+                print(f"\r  {GREEN}Generated{RESET}  {DIM}{_img_path}{RESET}")
+
+                # Open in Windows default viewer
+                try:
+                    _img_os.startfile(str(_img_path))
+                    print(f"  {DIM}Opened in viewer{RESET}")
+                except Exception:
+                    print(f"  {DIM}Saved — open manually: {_img_path}{RESET}")
+
+                # Auto-strand the prompt + path
+                if _STRAND_OK:
+                    _sid = _strand_save(
+                        f"image: {prompt[:200]}",
+                        f"Generated: {_img_path}\nRevised prompt: {_revised[:300]}",
+                        tags=["image", "dalle3"],
+                        score=0.70,
+                        territory_tag="creative",
+                        source="image",
+                        model="dall-e-3",
+                        provenance={"source_models": ["dall-e-3"], "human_rated": False, "confidence": 0.70},
+                    )
+                    print(f"  {GOLD}⬡ Stranded → {_sid}  [creative]{RESET}")
+
+                if _revised != prompt:
+                    print(f"\n  {DIM}DALL-E revised prompt:{RESET}")
+                    print(f"  {DIM}{_revised[:200]}{RESET}")
+                print()
+
+            except Exception as _ie:
+                print(f"\n  {RED}Image generation failed: {_ie}{RESET}\n")
+            continue
+
         # ── Web search ────────────────────────────────────────────────────
         elif cmd.startswith("search:") or cmd.startswith("search "):
             query = raw[7:].strip() if cmd.startswith("search:") else raw[7:].strip()
@@ -1464,20 +1540,16 @@ def main() -> None:
             print(f"  {DIM}Decoded original:{RESET}  {orig_display}")
             print()
 
-            # RTL script detection — console renders right-to-left text reversed,
-            # display is cosmetic only; the decoded string sent to the model is correct.
-            def _is_rtl(text: str) -> bool:
-                for ch in text:
-                    cp = ord(ch)
-                    if 0x0590 <= cp <= 0x05FF: return True  # Hebrew
-                    if 0x0600 <= cp <= 0x06FF: return True  # Arabic
-                    if 0xFB50 <= cp <= 0xFDFF: return True  # Arabic extended
-                    if 0xFE70 <= cp <= 0xFEFF: return True  # Arabic presentation
-                return False
-
-            _rtl = _is_rtl(decoded)
+            # Script detection and RTL display reorder
+            _script  = _babel_detect_script(decoded)
+            _rtl     = _babel_is_rtl(decoded)
+            print(f"  {DIM}Script detected: {_script}{RESET}")
             if _rtl:
-                print(f"  {DIM}RTL script detected — display is visually reversed (console limitation); data is correct{RESET}\n")
+                # Reorder word sequence so RTL text reads left-to-right on LTR terminals.
+                # Word-level reversal: correct Unicode chars, reversed sentence order.
+                orig_display = _babel_rtl_reorder(orig_display)
+                print(f"  {DIM}RTL reordered for terminal display (word order reversed){RESET}")
+            print()
 
             # Translation routing: external APIs are far more accurate than local model
             # for complex scripts. Priority: Claude > xAI > OpenAI > Ollama fallback.

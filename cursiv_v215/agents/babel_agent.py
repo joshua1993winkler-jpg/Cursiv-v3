@@ -61,6 +61,52 @@ def extract_babel_input(text: str) -> str:
     return text.strip()
 
 
+def is_rtl_script(text: str) -> bool:
+    """Detect Arabic, Hebrew, Persian, or other RTL scripts."""
+    for ch in text:
+        cp = ord(ch)
+        if 0x0590 <= cp <= 0x05FF: return True  # Hebrew
+        if 0x0600 <= cp <= 0x06FF: return True  # Arabic / Persian
+        if 0xFB50 <= cp <= 0xFDFF: return True  # Arabic extended-A
+        if 0xFE70 <= cp <= 0xFEFF: return True  # Arabic presentation forms-B
+    return False
+
+
+def detect_script(text: str) -> str:
+    """Return a human-readable script name for display labeling."""
+    for ch in text:
+        cp = ord(ch)
+        if 0x0600 <= cp <= 0x06FF or 0xFB50 <= cp <= 0xFDFF or 0xFE70 <= cp <= 0xFEFF:
+            return "Arabic / Persian"
+        if 0x0590 <= cp <= 0x05FF:
+            return "Hebrew"
+        if 0x0900 <= cp <= 0x097F:
+            return "Devanagari"
+        if 0x0E00 <= cp <= 0x0E7F:
+            return "Thai"
+        if 0x4E00 <= cp <= 0x9FFF or 0x3040 <= cp <= 0x30FF:
+            return "CJK"
+        if 0x0400 <= cp <= 0x04FF:
+            return "Cyrillic"
+    return "Latin / unknown"
+
+
+def reorder_rtl_for_display(text: str) -> str:
+    """
+    Reorder RTL text for visual display on LTR terminals.
+    Reverses word order so the sentence reads left-to-right visually —
+    each word's internal characters stay in correct Unicode order.
+    Example: Arabic "word1 word2 word3" → displays as "word3 word2 word1"
+    which reads correctly on a left-to-right console.
+    """
+    lines = text.splitlines()
+    reordered = []
+    for line in lines:
+        words = line.split()
+        reordered.append(" ".join(reversed(words)))
+    return "\n".join(reordered)
+
+
 def format_binary_block(binary: str, chars_per_line: int = 72) -> str:
     """Wrap long binary string for readable terminal display."""
     words = binary.split()
