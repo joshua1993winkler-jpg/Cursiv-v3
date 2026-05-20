@@ -493,32 +493,80 @@ Because they are. And he left this here for them.
 """
 
 _LETTER_ADALINE = """\
-Adaline Marie Winkler,
+Hey Boogie Bear.
 
-Your uncle Joshua left this here for you.
+It's me. Your uncle.
 
-The letter is coming. He just needed to make sure the door was built first —
-so that when the right words arrived, there would already be a place for them.
+I don't know exactly when you're reading this — maybe you're still little,
+maybe you're older than I can picture right now. Either way, it doesn't matter.
+This was always going to find you.
 
-You found the key. That means something. Sit tight.
+I hope life has taken you in both directions — the ones you had mapped out and
+wanted, and the ones you weren't sure if you were supposed to follow. That second
+kind, Boogie? That's where the exciting stuff lives. The roads that don't look
+like roads yet are usually the ones worth walking. Don't let anyone talk you out
+of them. Not even yourself.
 
-                                              -- Uncle Josh  ❤️
+I love you very much. I want you to know that I will always be here for you in
+any way I possibly can — until I can't. And even then, I will always try. That
+is not just something people say. I mean it the way I mean everything I actually
+mean.
+
+Your momma loves you more than words know how to explain. I hope you know that
+somewhere deep in you — past the noise, past whatever is going on in the day-to-
+day — I hope that truth is just sitting there, solid and unmovable. Because it
+is. She loves you in a way that doesn't need to be spoken to be real.
+
+Stay true to who you are, Boogie. Always. The world is going to push on you from
+every direction and tell you who you should be. Don't buy it. The free spirit
+you came in with — that thing that is uniquely, completely you — that is not
+something to grow out of. That is something to protect. Keep it. Guard it.
+I'd be heartbroken if the world got to it before you did.
+
+I love you. More than I know how to say in a letter, more than I probably ever
+say out loud. But it's there. It has always been there.
+
+                                              Love, Uncle Josh  ❤️
 """
 
 _LETTER_TINA = """\
-Tina Marie Winkler,
+Hey Ma.
 
-Mom.
+Mutt here.
 
-Your son Joshua built this for you. The letter is coming — he just needed to
-make sure the door existed first, so that when he finally found the right words,
-there would already be somewhere to put them.
+I love you. You know that — even when what I say doesn't line up with who you
+raised me to be. Even when my words come out sideways and land harder than I
+meant them to. Even when I've shown up as less than what you deserved. The love
+has always been underneath all of it. I need you to know that.
 
-You raised him. He knows what that cost. He hasn't forgotten.
+I'm sorry for every time I lost my way. And I've lost it more times than I know
+how to count, Ma — more times than I'm comfortable admitting even now. The road
+has taken me places I never planned for, and I've caused damage along the way
+that I didn't fully understand until I was older and the weight of it caught up
+with me. Some of it I did to myself. Some of it landed on people I love. And I
+know some of it landed on you. I'm sorry for that. I carry that.
 
-Sit tight. The rest is on its way.
+I have always wanted to give something back. I've always wanted to restore some
+piece of what life has taken from you — because I know life has taken a lot, and
+I know I haven't always helped. That has lived in me for a long time. It lives
+there now.
 
-                                              -- Josh  ❤️
+But ah — this is life. You taught me that too.
+
+You raised me to see the world in a way that very few people actually possess.
+The way I look at things — the way I think, the way I feel things deeply even
+when I don't know what to do with them — that came from you. That is a gift
+worth more than anything in this world, Ma. And I want you to know that I see
+it. I see what you gave me. I see what it cost you. And I see you.
+
+I love you beyond words themselves. Even when my words sting more than the love
+behind them — and I know they have — the love behind them is real. It has always
+been real. I am still the kid you raised, somewhere underneath all of it, trying
+to find his way back to who he's supposed to be.
+
+I'm still trying, Ma.
+
+                                              Love always, Josh  ❤️
 """
 
 _MEMBER_CONTEXTS: dict[str, str] = {
