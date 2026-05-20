@@ -2710,6 +2710,13 @@ def main() -> None:
                             _wpg = _call_xai_stream(_wpm, _wp_xai, False)
                         elif _wp_oai:
                             _wpg = _call_openai_direct(_wpm, _wp_oai)
+                        elif _CODEX_CLI_OK and _codex_avail_cli():
+                            # Offline fallback — Codex composes, Legacy saves
+                            _codex_result = _codex_gen_cli(
+                                f"Polish this personal letter. Keep the author's exact voice and "
+                                f"meaning. Only improve the flow. Return the letter only.\n\n{_wraw}"
+                            )
+                            _wpg = iter([_codex_result]) if _codex_result else iter([])
                         else:
                             _wpg = _call_ollama(_wpm)
                         for _wpc in _wpg:
