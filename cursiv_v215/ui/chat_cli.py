@@ -51,6 +51,9 @@ from cursiv_v215.ui.chat_app import (
     _web_search,
     _needs_search,
     _call_ollama,
+    _call_xai_stream,
+    _call_claude_direct,
+    _call_openai_direct,
 )
 
 try:
@@ -1461,15 +1464,49 @@ def main() -> None:
             print(f"  {DIM}Decoded original:{RESET}  {orig_display}")
             print()
 
-            # Send the decoded text to Ollama — LLM only needs to detect language
-            # and translate, not decode binary. This works for every script.
-            _babel_msgs = [
+            # RTL script detection — console renders right-to-left text reversed,
+            # display is cosmetic only; the decoded string sent to the model is correct.
+            def _is_rtl(text: str) -> bool:
+                for ch in text:
+                    cp = ord(ch)
+                    if 0x0590 <= cp <= 0x05FF: return True  # Hebrew
+                    if 0x0600 <= cp <= 0x06FF: return True  # Arabic
+                    if 0xFB50 <= cp <= 0xFDFF: return True  # Arabic extended
+                    if 0xFE70 <= cp <= 0xFEFF: return True  # Arabic presentation
+                return False
+
+            _rtl = _is_rtl(decoded)
+            if _rtl:
+                print(f"  {DIM}RTL script detected — display is visually reversed (console limitation); data is correct{RESET}\n")
+
+            # Translation routing: external APIs are far more accurate than local model
+            # for complex scripts. Priority: Claude > xAI > OpenAI > Ollama fallback.
+            _babel_tx_msgs = [
                 {"role": "system", "content": _BABEL_SYSTEM},
                 {"role": "user",   "content": decoded},
             ]
-            print(f"  {GOLD}Translation:{RESET}")
+            _ant_key = cfg.get("anthropic_key", "")
+            _xai_key = cfg.get("api_key", "")
+            _oai_key = cfg.get("openai_key", "")
+
+            if _ant_key:
+                _babel_label = "Claude"
+                _babel_gen   = _call_claude_direct(_babel_tx_msgs, _ant_key)
+            elif _xai_key:
+                _babel_label = "xAI"
+                _babel_gen   = _call_xai_stream(_babel_tx_msgs, _xai_key, False)
+            elif _oai_key:
+                _babel_label = "OpenAI"
+                _babel_gen   = _call_openai_direct(_babel_tx_msgs, _oai_key)
+            else:
+                _babel_label = "Ollama"
+                _babel_gen   = _call_ollama(_babel_tx_msgs, max_tokens=400)
+
+            print(f"  {GOLD}Translation{RESET}  {DIM}via {_babel_label}{RESET}:")
             full = ""
-            for chunk in _call_ollama(_babel_msgs, max_tokens=400):
+            for chunk in _babel_gen:
+                if chunk == RATE_SENTINEL:
+                    continue
                 try:
                     safe = chunk.encode(sys.stdout.encoding or "utf-8", errors="replace").decode(sys.stdout.encoding or "utf-8", errors="replace")
                 except Exception:
