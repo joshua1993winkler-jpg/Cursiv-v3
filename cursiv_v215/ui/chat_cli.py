@@ -163,15 +163,25 @@ try:
         parse_iam_command    as _fam_parse_iam,
         get_jw_header        as _fam_header,
         get_letter           as _fam_get_letter,
+        pin_is_set           as _fam_pin_is_set,
+        set_pin              as _fam_set_pin,
+        verify_pin           as _fam_verify_pin,
+        is_valid_pin         as _fam_pin_valid,
+        PIN_CHARS            as _FAM_PIN_CHARS,
     )
     _FAM_OK = True
 except Exception:
     _FAM_OK = False
-    def _fam_detect(n, d):       return None
-    def _fam_build_prompt(p):    return ""
-    def _fam_parse_iam(t):       return None
-    def _fam_header():           return ""
-    def _fam_get_letter(k):      return ""
+    def _fam_detect(n, d):        return None
+    def _fam_build_prompt(p):     return ""
+    def _fam_parse_iam(t):        return None
+    def _fam_header():            return ""
+    def _fam_get_letter(k):       return ""
+    def _fam_pin_is_set(k):       return False
+    def _fam_set_pin(k, p):       pass
+    def _fam_verify_pin(k, p):    return False
+    def _fam_pin_valid(p):        return False
+    _FAM_PIN_CHARS = "! @ # $ % ^ & * ~ - + = ? /"
 
 # ── Code Sentinel — prompt injection + dangerous pattern guard ────────────
 try:
@@ -2114,17 +2124,72 @@ def main() -> None:
                 print(f"  {DIM}Example:  babel مرحبا بالعالم{RESET}")
                 continue
 
-            # ── Family activation: "babel I am [Name] born [Date]" ───────────
+            # ── Family activation: "babel I am [Name] born [Date], [PIN]" ────
             if _FAM_OK:
                 _iam = _fam_parse_iam(raw_input)
                 if _iam is not None:
-                    _fam_name, _fam_dob = _iam
+                    _fam_name, _fam_dob, _fam_pin_input = _iam
                     _fam_profile = _fam_detect(_fam_name, _fam_dob)
                     if _fam_profile is not None:
                         _fam_display = _fam_profile["display"]
+                        _fam_key     = _fam_profile["key"]
+
+                        # ── PIN gate ──────────────────────────────────────────
+                        if not _fam_pin_is_set(_fam_key):
+                            # First activation — set a PIN
+                            print(f"\n  {GOLD}✦  Identity recognized.  Welcome, {_fam_display}.{RESET}")
+                            print(f"  {DIM}First-time setup: choose a personal PIN to secure your access.{RESET}")
+                            print(f"  {DIM}Pick any 2–8 character combination from this set:{RESET}")
+                            print(f"  {GOLD}{_FAM_PIN_CHARS}{RESET}\n")
+                            print(f"  {DIM}Example:  $#*   or   @!^   or   #+~={RESET}\n")
+                            try:
+                                if _HAS_PT:
+                                    _fam_pin1 = _pt_prompt(_PT_ANSI(
+                                        f"  {GOLD}Set PIN:{RESET}  "
+                                    )).strip()
+                                    _fam_pin2 = _pt_prompt(_PT_ANSI(
+                                        f"  {GOLD}Confirm PIN:{RESET}  "
+                                    )).strip()
+                                else:
+                                    _fam_pin1 = input("  Set PIN:  ").strip()
+                                    _fam_pin2 = input("  Confirm PIN:  ").strip()
+                            except (EOFError, KeyboardInterrupt):
+                                print(f"\n  {DIM}Setup cancelled.{RESET}\n")
+                                continue
+
+                            if not _fam_pin_valid(_fam_pin1):
+                                print(f"\n  {RED}PIN must be 2–8 characters from the allowed set.{RESET}")
+                                print(f"  {DIM}Available: {_FAM_PIN_CHARS}{RESET}\n")
+                                continue
+                            if _fam_pin1 != _fam_pin2:
+                                print(f"\n  {RED}PINs do not match. Try again.{RESET}\n")
+                                continue
+
+                            _fam_set_pin(_fam_key, _fam_pin1)
+                            print(f"\n  {LGOLD}PIN set.{RESET}  "
+                                  f"{DIM}Next time include it at the end: born [date], {_fam_pin1}{RESET}\n")
+
+                        else:
+                            # Returning activation — verify PIN
+                            if _fam_pin_input is None:
+                                # PIN not supplied in command — prompt for it
+                                try:
+                                    if _HAS_PT:
+                                        _fam_pin_input = _pt_prompt(_PT_ANSI(
+                                            f"  {GOLD}PIN:{RESET}  "
+                                        )).strip()
+                                    else:
+                                        _fam_pin_input = input("  PIN:  ").strip()
+                                except (EOFError, KeyboardInterrupt):
+                                    _fam_pin_input = ""
+
+                            if not _fam_verify_pin(_fam_key, _fam_pin_input or ""):
+                                print(f"\n  {DIM}Processing…{RESET}\n")
+                                # Silent failure — same output as no match
+                                continue
 
                         # ── Boundary warning ─────────────────────────────────
-                        print(f"\n  {GOLD}✦  Identity recognized.  Welcome, {_fam_display}.{RESET}\n")
+                        print(f"\n  {GOLD}✦  Access granted.  Welcome, {_fam_display}.{RESET}\n")
                         print(f"  {RED}┌──────────────────────────────────────────────────────────────┐{RESET}")
                         print(f"  {RED}│                      BOUNDARY NOTICE                        │{RESET}")
                         print(f"  {RED}└──────────────────────────────────────────────────────────────┘{RESET}")

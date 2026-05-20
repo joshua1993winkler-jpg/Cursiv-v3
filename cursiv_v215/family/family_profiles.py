@@ -9,9 +9,10 @@ The credential hashes below are SHA-256 digests of:
 The letters are plaintext — but you had to find this file to read them.
 That was the point.
 
-Activation: type  babel I am [Full Name] born [Date of Birth]
+Activation: type  babel I am [Full Name] born [Date of Birth], [PIN]
             inside a running Cursiv session.
-            The birth date is the key.
+            The birth date + PIN is the key.
+            First activation sets the PIN. Forgotten PIN → ask Joshua to reset it.
 
 Created: May 20, 2026 · 4:30 A.M. · Fruitland Park, Florida
 Author:  Joshua Winkler
@@ -19,9 +20,54 @@ Author:  Joshua Winkler
 from __future__ import annotations
 
 import hashlib
+import hmac
 import re
+from pathlib import Path
 
 from cursiv_v215.family.date_matcher import normalize_dob
+
+# ── PIN storage ───────────────────────────────────────────────────────────────
+# Each family member's PIN is stored as sha256(pin) in .cursiv/family/<key>.pin
+# The plain PIN is never written anywhere.
+
+_PIN_DIR = Path(__file__).parent.parent.parent / ".cursiv" / "family"
+
+# Characters available for PIN construction — shown to the user during setup.
+PIN_CHARS   = "! @ # $ % ^ & * ~ - + = ? /"
+_PIN_VALID  = set("!@#$%^&*~-+=?/")
+
+
+def pin_is_set(member_key: str) -> bool:
+    return (_PIN_DIR / f"{member_key}.pin").exists()
+
+
+def is_valid_pin(pin: str) -> bool:
+    """PIN must be 2–8 characters drawn entirely from PIN_CHARS."""
+    s = pin.strip()
+    return 2 <= len(s) <= 8 and all(c in _PIN_VALID for c in s)
+
+
+def set_pin(member_key: str, pin: str) -> None:
+    _PIN_DIR.mkdir(parents=True, exist_ok=True)
+    h = hashlib.sha256(pin.strip().encode()).hexdigest()
+    (_PIN_DIR / f"{member_key}.pin").write_text(h, encoding="utf-8")
+
+
+def verify_pin(member_key: str, pin: str) -> bool:
+    p = _PIN_DIR / f"{member_key}.pin"
+    if not p.exists():
+        return False
+    stored = p.read_text(encoding="utf-8").strip()
+    h = hashlib.sha256(pin.strip().encode()).hexdigest()
+    return hmac.compare_digest(stored, h)
+
+
+def reset_pin(member_key: str) -> None:
+    p = _PIN_DIR / f"{member_key}.pin"
+    try:
+        p.unlink(missing_ok=True)
+    except Exception:
+        pass
 
 # ── Credential hashes (SHA-256 of "normalized_name|YYYY-MM-DD") ───────────────
 # These cannot be reversed. Only someone who knows both the exact name and the
@@ -561,16 +607,37 @@ def get_jw_header() -> str:
     return _JW_HEADER
 
 
-def parse_iam_command(text: str) -> tuple[str, str] | None:
+def parse_iam_command(text: str) -> tuple[str, str, str | None] | None:
     """
-    Parse 'I am [Full Name] born [Date]' from a babel input string.
-    Returns (full_name, date_text) or None if pattern not found.
+    Parse 'I am [Full Name] born [Date][, PIN]' from a babel input string.
+
+    PIN is optional on first call (setup flow). On return calls, the PIN
+    should be appended after a comma: 'born 9-12-1995, 1234'
+
+    Ambiguity rule: trailing ', NNNN' is treated as a PIN only when the
+    date portion that remains still parses to a complete date (has a year).
+    This prevents mistaking 'born september 12, 1995' for date='september 12'
+    plus pin='1995'.
+
+    Returns (full_name, date_text, pin_or_None) or None if no match.
     """
-    m = re.match(
-        r"^i\s+am\s+(.+?)\s+born\s+(.+)$",
-        text.strip(),
-        re.IGNORECASE,
-    )
-    if m:
-        return m.group(1).strip(), m.group(2).strip()
-    return None
+    m = re.match(r"^i\s+am\s+(.+?)\s+born\s+(.+)$", text.strip(), re.IGNORECASE)
+    if not m:
+        return None
+
+    name_part = m.group(1).strip()
+    rest      = m.group(2).strip()
+    pin       = None
+
+    # Try to split off a trailing comma-separated PIN (special chars, 2–8 chars)
+    _pin_chars_re = r"[!@#$%^&*~\-+=?/]{2,8}"
+    pin_m = re.search(rf",\s*({_pin_chars_re})\s*$", rest)
+    if pin_m:
+        potential_pin  = pin_m.group(1)
+        potential_date = rest[:pin_m.start()].strip()
+        # Only accept as PIN if the remaining date still parses completely
+        if normalize_dob(potential_date) is not None:
+            pin  = potential_pin
+            rest = potential_date
+
+    return name_part, rest, pin
