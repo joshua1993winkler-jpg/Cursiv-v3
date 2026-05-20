@@ -721,6 +721,7 @@ _HELP = f"""\
   {LGOLD}remember <query>{RESET}          pure local memory search — zero cloud, zero API
   {LGOLD}pull <url>{RESET}                fetch + analyze any URL → auto-strand the insight
   {LGOLD}image <description>{RESET}       generate image via DALL-E 3 → saves + opens + strands
+  {LGOLD}paste{RESET}                     paste image from clipboard → vision analysis → strand
                             Council syntheses auto-anchor at quality > 0.75
 
   {GOLD}── FunForge (bounded creative spike) ───────────────────────────{RESET}
@@ -1392,6 +1393,134 @@ def main() -> None:
                     print(f"  {LGOLD}Queued:{RESET}  {DIM}{entry.get('id','?')} — {task[:60]}{RESET}")
                 else:
                     print(f"  {LGOLD}Usage:{RESET}  {DIM}queue list  |  queue add <task>{RESET}")
+            continue
+
+        # ── Paste image from clipboard → vision analysis → strand ────────
+        elif cmd == "paste":
+            try:
+                from PIL import ImageGrab as _IG, Image as _PILI
+            except ImportError:
+                print(f"  {RED}Pillow required for image paste.{RESET}  {DIM}pip install Pillow{RESET}")
+                continue
+            try:
+                _clip = _IG.grabclipboard()
+                if _clip is None:
+                    print(f"  {DIM}Clipboard empty — copy an image first (screenshot, right-click copy, etc.) then type 'paste'{RESET}")
+                    continue
+                # Handle copied file list (e.g. right-click copy file in Explorer)
+                if isinstance(_clip, list):
+                    _img_exts = (".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp")
+                    _img_files = [f for f in _clip if str(f).lower().endswith(_img_exts)]
+                    if not _img_files:
+                        print(f"  {DIM}Clipboard has files but none are images.{RESET}")
+                        continue
+                    _clip = _PILI.open(str(_img_files[0]))
+                if not isinstance(_clip, _PILI.Image):
+                    print(f"  {DIM}Clipboard contains text, not an image. Use Ctrl+C on an image first.{RESET}")
+                    continue
+
+                import os as _pos
+                from pathlib import Path as _PPath
+                from datetime import datetime as _PDt
+                import base64 as _b64img
+
+                _img_dir  = _PPath(".cursiv") / "images"
+                _img_dir.mkdir(parents=True, exist_ok=True)
+                _img_ts   = _PDt.now().strftime("%Y%m%d_%H%M%S")
+                _img_path = _img_dir / f"paste_{_img_ts}.png"
+                _clip.save(str(_img_path), "PNG")
+                _w, _h = _clip.size
+
+                print(f"\n  {GOLD}⬡ Image Pasted{RESET}  {DIM}{_w}×{_h}px  →  {_img_path}{RESET}\n")
+                try:
+                    _pos.startfile(str(_img_path))
+                except Exception:
+                    pass
+
+                # Vision analysis — Claude > OpenAI > skip
+                _vision_result  = ""
+                _vision_provider = ""
+                _ant_key = cfg.get("anthropic_key", "")
+                _oai_key = cfg.get("openai_key", "")
+
+                with open(_img_path, "rb") as _vf:
+                    _img_b64 = _b64img.b64encode(_vf.read()).decode()
+
+                if _ant_key:
+                    try:
+                        import anthropic as _anth_v
+                        _anth_vc = _anth_v.Anthropic(api_key=_ant_key)
+                        _vresp = _anth_vc.messages.create(
+                            model="claude-sonnet-4-6",
+                            max_tokens=600,
+                            messages=[{"role": "user", "content": [
+                                {"type": "image", "source": {
+                                    "type": "base64",
+                                    "media_type": "image/png",
+                                    "data": _img_b64,
+                                }},
+                                {"type": "text", "text": (
+                                    "Describe what you see in this image. "
+                                    "Be specific and useful. Flag anything relevant "
+                                    "to code, design, architecture, or ongoing work."
+                                )},
+                            ]}]
+                        )
+                        _vision_result   = _vresp.content[0].text
+                        _vision_provider = "Claude"
+                    except Exception as _ve:
+                        print(f"  {DIM}Claude vision failed: {_ve}{RESET}")
+
+                if not _vision_result and _oai_key:
+                    try:
+                        import openai as _oai_v
+                        _oai_vc = _oai_v.OpenAI(api_key=_oai_key)
+                        _vresp2 = _oai_vc.chat.completions.create(
+                            model="gpt-4o",
+                            max_tokens=600,
+                            messages=[{"role": "user", "content": [
+                                {"type": "image_url", "image_url": {
+                                    "url": f"data:image/png;base64,{_img_b64}"
+                                }},
+                                {"type": "text", "text": (
+                                    "Describe what you see in this image. "
+                                    "Be specific and useful. Flag anything relevant "
+                                    "to code, design, architecture, or ongoing work."
+                                )},
+                            ]}]
+                        )
+                        _vision_result   = _vresp2.choices[0].message.content
+                        _vision_provider = "GPT-4o"
+                    except Exception as _ve2:
+                        print(f"  {DIM}GPT-4o vision failed: {_ve2}{RESET}")
+
+                if _vision_result:
+                    print(f"  {GOLD}Vision Analysis{RESET}  {DIM}via {_vision_provider}{RESET}:\n")
+                    for _vline in _vision_result.splitlines():
+                        safe_vl = _vline.encode(sys.stdout.encoding or "utf-8", errors="replace").decode(sys.stdout.encoding or "utf-8", errors="replace")
+                        print(f"  {safe_vl}")
+                    print()
+                else:
+                    print(f"  {DIM}No vision model available — image saved, no analysis.{RESET}")
+                    print(f"  {DIM}Set an Anthropic or OpenAI key to enable analysis.{RESET}\n")
+
+                # Auto-strand
+                if _STRAND_OK:
+                    _strand_body = _vision_result or f"Image pasted: {_img_path} ({_w}x{_h}px)"
+                    _sid = _strand_save(
+                        f"paste: image {_img_ts}",
+                        _strand_body,
+                        tags=["image", "paste", "vision"],
+                        score=0.72,
+                        territory_tag="worldmodel",
+                        source="paste",
+                        model=_vision_provider or "none",
+                        provenance={"source_models": [_vision_provider or "none"], "human_rated": False, "confidence": 0.72},
+                    )
+                    print(f"  {GOLD}⬡ Stranded → {_sid}  [worldmodel]{RESET}\n")
+
+            except Exception as _pe:
+                print(f"  {RED}Paste failed: {_pe}{RESET}\n")
             continue
 
         # ── Image generation (DALL-E 3 via OpenAI key) ───────────────────
