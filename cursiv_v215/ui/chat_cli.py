@@ -414,31 +414,34 @@ except Exception:
     def _board_blast(t, s):    return (False, "board client unavailable")
 
 def _extract_blast_synthesis(full_text: str) -> str:
-    """Extract just the Ollama final synthesis from group_discovery output."""
-    FINAL_MARKER = "FINAL SYNTHESIS — LOCAL COUNCIL"
+    """
+    Extract just the final answer paragraph from group_discovery output.
+    Finds the FINAL SYNTHESIS section, then takes the last substantive
+    paragraph within it — that's Ollama's closing declarative answer.
+    """
+    FINAL_MARKER = "FINAL SYNTHESIS — LOCAL COUNCIL"   # — em-dash
     END_MARKER   = "CURSIV BINARY SNAPSHOT"
+
+    body = full_text
 
     start = full_text.find(FINAL_MARKER)
     if start != -1:
-        # Jump past the marker line and the following ═══ decorator line
-        after_marker = full_text.find("\n", start) + 1          # end of marker line
-        after_deco   = full_text.find("\n", after_marker) + 1   # end of ═══ line
-        content_start = after_deco
-
-        end = full_text.find(END_MARKER, content_start)
+        # skip past the marker line and the ═══ decorator line after it
+        after_marker  = full_text.find("\n", start) + 1
+        after_deco    = full_text.find("\n", after_marker) + 1
+        end = full_text.find(END_MARKER, after_deco)
         if end == -1:
             end = len(full_text)
+        body = full_text[after_deco:end].strip(" \n─-")
 
-        extracted = full_text[content_start:end].strip(" \n─-")
-        if len(extracted) > 40:
-            return extracted
-
-    # Fallback: last substantial paragraph that isn't a header or metadata line
-    paragraphs = [p.strip() for p in full_text.split("\n\n") if p.strip()]
+    # From the body, take the last non-empty paragraph that isn't a header/meta line
+    paragraphs = [p.strip() for p in body.split("\n\n") if p.strip()]
+    skip = {"SEED:", "*1 provider", "█", "═", "---"}
     for p in reversed(paragraphs):
-        if len(p) > 60 and "SEED:" not in p and not p.startswith("*1 provider"):
+        if len(p) > 40 and not any(s in p for s in skip) and not p.startswith("**["):
             return p
-    return full_text.strip()
+
+    return body.strip() or full_text.strip()
 
 
 # ── Async Council — Option C parallel deliberation ───────────────────────────
