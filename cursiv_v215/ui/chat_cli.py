@@ -347,6 +347,20 @@ except Exception:
     def _strand_terr_counts() -> dict:           return {}
     def _strand_territories() -> dict:           return {}
 
+# ── Async Council — Option C parallel deliberation ───────────────────────────
+try:
+    from cursiv_v215.council.async_council import (
+        run_council       as _async_council_run,
+        council_available as _async_council_ok,
+        detect_full_mode  as _async_council_detect_full,
+    )
+    _ASYNC_COUNCIL_OK = True
+except Exception:
+    _ASYNC_COUNCIL_OK = False
+    def _async_council_run(q, cfg, **kw):        return None
+    def _async_council_ok(cfg):                  return False
+    def _async_council_detect_full(q):           return False, q, ""
+
 # ── System Guardian — back-end CLI defense layer ────────────────────────────
 try:
     from cursiv_v215.guardian.temple_guardian import (
@@ -924,11 +938,16 @@ _HELP = f"""\
                             Example:  babel I love you into korean mandarin russian
                             Example:  babel Good morning into spanish french japanese
 
-  {GOLD}── Group Discovery (multi-provider consensus) ───────────────────{RESET}
-  {LGOLD}council <question>{RESET}        xAI → OpenAI → Claude in sequence, each seeing
-                            prior responses; ends with synthesis + Cursiv binary
-                            snapshot you can paste into Grok on X to decode
-  {LGOLD}hey council <question>{RESET}    same, inline routing prefix
+  {GOLD}── Council (async parallel deliberation) ──────────────────────{RESET}
+  {LGOLD}council <question>{RESET}        all providers fire simultaneously — each streams
+                            live, synthesis deliberates across signals
+  {LGOLD}/full <question>{RESET}          full deliberation mode — complete responses,
+  {LGOLD}/deliberate <question>{RESET}    no signal extraction, synthesis gets everything
+                            also triggers on phrase: "show your reasoning",
+                            "full deliberation", "walk me through", etc.
+                            or automatically when query touches a territory
+                            marked  full_token_required: true  in territories.json
+  {LGOLD}hey council <question>{RESET}    inline routing prefix (same as council)
 
   {GOLD}── Strand Archive (persistent memory across sessions) ───────────{RESET}
   {LGOLD}anchor this{RESET}               save last exchange as a Strand (permanent)
@@ -1274,19 +1293,43 @@ def main() -> None:
             continue
 
         elif cmd == "council" or cmd.startswith("council "):
-            question = raw[8:].strip() if cmd.startswith("council ") else ""
-            if not question:
-                print(f"  {LGOLD}Usage:{RESET}  {DIM}council <your question>{RESET}")
+            _raw_question = raw[8:].strip() if cmd.startswith("council ") else ""
+            if not _raw_question:
+                print(
+                    f"  {LGOLD}Usage:{RESET}  {DIM}council <question>{RESET}\n"
+                    f"  {DIM}Full deliberation:{RESET}  {DIM}/full <question>  or  /deliberate <question>{RESET}\n"
+                    f"  {DIM}Phrase triggers:{RESET}  {DIM}\"show your reasoning\", \"full deliberation\", \"walk me through\", …{RESET}"
+                )
+            elif _ASYNC_COUNCIL_OK:
+                # ── Option C — async parallel council with streaming ──────
+                result = _async_council_run(_raw_question, cfg)
+                if result is not None:
+                    _session_append_cli(result.query, result.synthesis, "async_council")
+                    if _STRAND_OK and result.synthesis and len(result.synthesis) > 100:
+                        _strand_save(
+                            result.query,
+                            result.synthesis,
+                            tags=["council", "async", result.mode],
+                            score=0.80 if result.mode == "full" else 0.75,
+                            territory_tag="worldmodel",
+                            source="async_council",
+                            model="council_synthesis",
+                        )
+                        print(f"  {DIM}⬡ anchored to worldmodel strands{RESET}")
             else:
+                # ── Fallback — sequential group discovery ─────────────────
                 has_any = cfg.get("api_key") or cfg.get("openai_key") or cfg.get("anthropic_key")
                 if not has_any:
-                    print(f"  {RED}Group Discovery requires at least one API key.{RESET}")
+                    print(f"  {RED}Council requires at least one API key.{RESET}")
                 else:
-                    print(f"\n  {GOLD}⬡ GROUP DISCOVERY{RESET}  {SILV2}· {question[:60]}{'...' if len(question)>60 else ''}{RESET}")
+                    print(
+                        f"\n  {GOLD}⬡ GROUP DISCOVERY{RESET}  "
+                        f"{SILV2}· {_raw_question[:60]}{'…' if len(_raw_question)>60 else ''}{RESET}"
+                    )
                     full = ""
                     try:
                         for chunk in _call_group_discovery(
-                            question,
+                            _raw_question,
                             cfg.get("api_key", ""),
                             cfg.get("openai_key", ""),
                             cfg.get("anthropic_key", ""),
@@ -1297,10 +1340,10 @@ def main() -> None:
                     except KeyboardInterrupt:
                         print(f"\n  {DIM}[interrupted]{RESET}")
                     print()
-                    _session_append_cli(question, full, "group_discovery")
+                    _session_append_cli(_raw_question, full, "group_discovery")
                     if _STRAND_OK and full and len(full) > 200:
                         _strand_save(
-                            question, full,
+                            _raw_question, full,
                             tags=["council", "group_discovery"],
                             score=0.75,
                             territory_tag="worldmodel",
