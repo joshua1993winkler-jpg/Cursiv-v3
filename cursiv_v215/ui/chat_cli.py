@@ -1027,6 +1027,15 @@ _HELP = f"""\
                             marked  full_token_required: true  in territories.json
   {LGOLD}hey council <question>{RESET}    inline routing prefix (same as council)
 
+  {GOLD}── Blast (public board transmission) ──────────────────────────{RESET}
+  {LGOLD}blast register <username>{RESET} create your board account
+  {LGOLD}blast login <username>{RESET}    log in to the board
+  {LGOLD}blast logout{RESET}              log out
+  {LGOLD}blast who{RESET}                 show current board user
+  {LGOLD}blast{RESET}                     post last council synthesis to the public board
+                            run a council deliberation first, then blast to send
+                            live at cursiv.winklers-llc.com/board.html
+
   {GOLD}── Strand Archive (persistent memory across sessions) ───────────{RESET}
   {LGOLD}anchor this{RESET}               save last exchange as a Strand (permanent)
   {LGOLD}anchor this <territory>{RESET}   same, tagged to a domain
