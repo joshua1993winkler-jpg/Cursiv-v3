@@ -45,7 +45,9 @@ from cursiv_v215.postal.postal_sign import (
     identity_exists,
     generate_identity,
     my_public_key,
-    key_id as _key_id,
+    key_id    as _key_id,
+    rotate_key,
+    get_key_history,
 )
 
 # ── Storage ───────────────────────────────────────────────────────────────────
@@ -202,3 +204,42 @@ def resolve_recipient(name_or_key: str) -> tuple[str, str] | None:
     if contact is None:
         return None
     return contact["name"], contact["pubkey"]
+
+
+# ── Key rotation ──────────────────────────────────────────────────────────────
+
+def rotate_identity(
+    reason:      str  = "manual rotation",
+    compromised: bool = False,
+) -> dict[str, str]:
+    """
+    Retire the current Ed25519 keypair, generate a fresh one, and update
+    the identity metadata file.
+
+    compromised=True activates coherence degradation: any letter later
+    verified against the retired key returns shifted content — plausible
+    but wrong. The fraction of corruption grows with key age (10% → 65%).
+    The attacker sees output. They never see truth.
+
+    The old key is archived locally. PBKDF2 encryption uses display names
+    (not keys), so all existing letters remain fully decryptable.
+
+    Returns {"old_key_id": ..., "new_key_id": ..., "new_pubkey": ...}
+    """
+    result  = rotate_key(reason=reason, compromised=compromised)
+    # Refresh identity_meta with new pubkey
+    meta    = load_identity() or {}
+    meta["pubkey"]     = result["new_pubkey"]
+    meta["key_id"]     = result["new_key_id"]
+    meta["rotated_at"] = __import__("datetime").datetime.now().isoformat()
+    _POSTAL_DIR.mkdir(parents=True, exist_ok=True)
+    _IDENTITY_FILE.write_text(
+        __import__("json").dumps(meta, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return result
+
+
+def key_rotation_history() -> list[dict]:
+    """Return all retired key records for this identity, newest first."""
+    return get_key_history()

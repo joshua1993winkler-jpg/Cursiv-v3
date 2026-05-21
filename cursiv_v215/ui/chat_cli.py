@@ -363,12 +363,14 @@ try:
     )
     from cursiv_v215.postal.council_reader import council_walkthrough as _postal_council
     from cursiv_v215.postal.user_registry import (
-        setup_identity     as _postal_setup,
-        my_identity        as _postal_my_id,
-        add_contact        as _postal_add_contact,
-        remove_contact     as _postal_rm_contact,
-        list_contacts      as _postal_contacts,
-        resolve_recipient  as _postal_resolve,
+        setup_identity      as _postal_setup,
+        my_identity         as _postal_my_id,
+        add_contact         as _postal_add_contact,
+        remove_contact      as _postal_rm_contact,
+        list_contacts       as _postal_contacts,
+        resolve_recipient   as _postal_resolve,
+        rotate_identity     as _postal_rotate,
+        key_rotation_history as _postal_key_history,
     )
     _POSTAL_OK = True
 except Exception:
@@ -390,6 +392,8 @@ except Exception:
     def _postal_rm_contact(n):             return False
     def _postal_contacts():                return []
     def _postal_resolve(n):                return None
+    def _postal_rotate(reason="", **kw):   return {}
+    def _postal_key_history():             return []
 
 # ── Async Council — Option C parallel deliberation ───────────────────────────
 try:
@@ -1520,8 +1524,10 @@ def main() -> None:
                 print(f"\n  {DIM}[discarded]{RESET}")
             if _lines:
                 _content = "\n".join(_lines)
-                _my_id_meta = _postal_my_id()
-                _sender_key = _my_id_meta["pubkey"] if _my_id_meta else _postal_user
+                _my_id_meta  = _postal_my_id()
+                # sender_key = stable display name (PBKDF2 anchor, never changes on rotation)
+                # Ed25519 signing uses the private key independently
+                _sender_key  = _my_id_meta.get("name", _postal_user).lower() if _my_id_meta else _postal_user
                 _sender_disp = _my_id_meta.get("name", _postal_user).title() if _my_id_meta else _postal_user.title()
                 # Sealing progress display
                 _steps = {
@@ -1603,10 +1609,12 @@ def main() -> None:
                 continue
             _sig_st = _postal_sig_status(_lid)
             _sig_badge = {
-                "verified":   f"{GREEN}✓ VERIFIED{RESET}",
-                "unverified": f"{GOLD}~ unverified  (sender not in contacts){RESET}",
-                "unsigned":   f"{DIM}unsigned  (pre-identity letter){RESET}",
-                "INVALID":    f"{RED}✗ SIGNATURE INVALID — identity cannot be confirmed{RESET}",
+                "verified":              f"{GREEN}✓ VERIFIED{RESET}",
+                "verified_rotated":      f"{GREEN}✓ VERIFIED{RESET}  {DIM}(signed with sender's prior key){RESET}",
+                "verified_compromised":  f"{GOLD}⟳ COHERENCE DEGRADED{RESET}  {DIM}(signed with a compromised key — content shifted){RESET}",
+                "unverified":            f"{GOLD}~ unverified  (sender not in contacts){RESET}",
+                "unsigned":              f"{DIM}unsigned  (pre-identity letter){RESET}",
+                "INVALID":               f"{RED}✗ SIGNATURE INVALID — identity cannot be confirmed{RESET}",
             }.get(_sig_st, f"{DIM}{_sig_st}{RESET}")
             print(f"\n  {GOLD}╔{'═'*62}╗{RESET}")
             print(f"  {GOLD}║{RESET}  {DIM}from:{RESET} {_entry.get('from_display','?')}  "
@@ -1754,6 +1762,49 @@ def main() -> None:
                 print(f"  {DIM}Contact removed: {_rm_name}{RESET}")
             else:
                 print(f"  {DIM}Contact not found: {_rm_name}{RESET}")
+            continue
+
+        elif cmd.startswith("postal rotate") or cmd == "postal rotate key":
+            if not _POSTAL_OK:
+                print(f"  {RED}Postal module unavailable.{RESET}")
+                continue
+            _is_compromised = "compromised" in cmd or "leaked" in cmd
+            _rotate_reason  = "key compromised — attacker may have private key" if _is_compromised else "manual rotation"
+            print(f"\n  {GOLD}⬡ KEY ROTATION{RESET}  "
+                  f"{'  ' + RED + 'COMPROMISED' + RESET if _is_compromised else DIM + 'manual' + RESET}")
+            if _is_compromised:
+                print(f"  {GOLD}Coherence degradation will activate on retired key.{RESET}")
+                print(f"  {DIM}Any letter later read through the old key returns shifted content.")
+                print(f"  The attacker sees output. They do not see truth.{RESET}\n")
+            try:
+                _rot = _postal_rotate(reason=_rotate_reason, compromised=_is_compromised)
+                if not _rot:
+                    print(f"  {RED}Rotation failed — no identity set up. Run: postal setup <name>{RESET}")
+                    continue
+                print(f"  {DIM}Old key ID:  {RESET}{_rot.get('old_key_id','?')[:8]}  {DIM}(archived locally){RESET}")
+                print(f"  {GOLD}New key ID:  {RESET}{_rot.get('new_key_id','?')[:8]}")
+                print(f"  {GOLD}New public:  {RESET}{BOLD}{_rot.get('new_pubkey','?')}{RESET}")
+                print(f"\n  {DIM}Update your contacts with your new key.")
+                print(f"  They run:  postal add user <your name> <new key>{RESET}\n")
+            except Exception as _e:
+                print(f"  {RED}Rotation failed: {_e}{RESET}")
+            continue
+
+        elif cmd == "postal key history":
+            if not _POSTAL_OK:
+                print(f"  {RED}Postal module unavailable.{RESET}")
+                continue
+            _hist = _postal_key_history()
+            print(f"\n  {GOLD}⬡ KEY HISTORY  ({len(_hist)} retired){RESET}")
+            if not _hist:
+                print(f"  {DIM}No retired keys.{RESET}")
+            else:
+                for _hk in _hist:
+                    _comp_flag = f"  {RED}COMPROMISED — coherence degradation active{RESET}" if _hk.get("compromised") else ""
+                    print(f"  {DIM}{_hk.get('key_id','?')[:8]}{RESET}  "
+                          f"{DIM}retired:{_hk.get('retired_at','?')[:10]}  "
+                          f"{_hk.get('reason','?')[:40]}{RESET}{_comp_flag}")
+            print()
             continue
 
         elif cmd == "postal contacts":

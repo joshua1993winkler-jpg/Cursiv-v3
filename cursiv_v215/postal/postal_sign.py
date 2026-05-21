@@ -40,7 +40,10 @@ except ImportError:
 
 import base64
 import hashlib
+import json
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
@@ -50,8 +53,10 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.exceptions import InvalidSignature
 
 # ── Storage ───────────────────────────────────────────────────────────────────
-_POSTAL_DIR  = Path(__file__).parent.parent.parent / ".cursiv" / "postal"
-_PRIVKEY_PEM = _POSTAL_DIR / "identity.pem"
+_POSTAL_DIR    = Path(__file__).parent.parent.parent / ".cursiv" / "postal"
+_PRIVKEY_PEM   = _POSTAL_DIR / "identity.pem"
+_HISTORY_DIR   = _POSTAL_DIR / "key_history"
+_HISTORY_INDEX = _POSTAL_DIR / "key_history.json"
 
 
 # ── Key lifecycle ─────────────────────────────────────────────────────────────
@@ -180,10 +185,123 @@ def verify_letter(
     if pubkey is None:
         return False
     try:
-        padded = signature_b64 + "=" * (-len(signature_b64) % 4)
+        padded  = signature_b64 + "=" * (-len(signature_b64) % 4)
         raw_sig = base64.urlsafe_b64decode(padded)
-        msg = _sign_input(letter_id, sender_key, recipient_key, timestamp, letter_salt, ciphertext)
+        msg     = _sign_input(letter_id, sender_key, recipient_key, timestamp, letter_salt, ciphertext)
         pubkey.verify(raw_sig, msg)
         return True
     except (InvalidSignature, Exception):
         return False
+
+
+def verify_with_history(
+    signature_b64:     str,
+    sender_pubkey_b64: str,
+    letter_id:         str,
+    sender_key:        str,
+    recipient_key:     str,
+    timestamp:         str,
+    letter_salt:       bytes,
+    ciphertext:        bytes,
+) -> tuple[bool, str]:
+    """
+    Try to verify against the current key first, then any retired keys.
+    Returns (verified, which_key_id) — key_id is "none" if all fail.
+
+    This allows letters signed with a rotated-away key to still verify
+    against the sender's archived history.
+    """
+    # Try current key first
+    if verify_letter(signature_b64, sender_pubkey_b64, letter_id, sender_key,
+                     recipient_key, timestamp, letter_salt, ciphertext):
+        return True, key_id(sender_pubkey_b64)
+
+    # Try historical keys (most recent first)
+    for entry in reversed(_load_history()):
+        hist_pubkey = entry.get("pubkey", "")
+        if not hist_pubkey:
+            continue
+        if verify_letter(signature_b64, hist_pubkey, letter_id, sender_key,
+                         recipient_key, timestamp, letter_salt, ciphertext):
+            return True, entry.get("key_id", "historical")
+
+    return False, "none"
+
+
+# ── Key rotation ──────────────────────────────────────────────────────────────
+
+def _load_history() -> list[dict[str, Any]]:
+    if not _HISTORY_INDEX.exists():
+        return []
+    try:
+        return json.loads(_HISTORY_INDEX.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def _save_history(history: list[dict[str, Any]]) -> None:
+    _HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+    _HISTORY_INDEX.write_text(
+        json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def rotate_key(
+    reason:      str  = "manual rotation",
+    compromised: bool = False,
+) -> dict[str, str]:
+    """
+    Retire the current Ed25519 keypair and generate a fresh one.
+
+    compromised=True marks the retired key in history so that any letter
+    later verified against it receives coherence degradation — the content
+    passes through shifted rather than clean, preserving plausibility while
+    corrupting meaning. The attacker sees output, but not truth.
+
+    The old private key is archived to .cursiv/postal/key_history/ (local only).
+    Old signatures remain verifiable via verify_with_history().
+    Letters sealed with old keys remain decryptable — PBKDF2 uses display names,
+    not the Ed25519 key, so decryption is unaffected by rotation.
+
+    Returns {"old_key_id": ..., "new_key_id": ..., "new_pubkey": ...}
+    """
+    _POSTAL_DIR.mkdir(parents=True, exist_ok=True)
+    _HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+
+    old_pubkey_b64 = my_public_key()
+    old_key_id_str = key_id(old_pubkey_b64) if old_pubkey_b64 else "none"
+
+    # Archive old private key if it exists
+    if _PRIVKEY_PEM.exists():
+        timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
+        archive_fn = _HISTORY_DIR / f"{timestamp}_{old_key_id_str}.pem"
+        archive_fn.write_bytes(_PRIVKEY_PEM.read_bytes())
+        archive_fn.chmod(0o600)
+
+        # Record in history index
+        history = _load_history()
+        history.append({
+            "key_id":      old_key_id_str,
+            "pubkey":      old_pubkey_b64 or "",
+            "retired_at":  datetime.now().isoformat(),
+            "reason":      reason,
+            "compromised": compromised,
+            "archive":     archive_fn.name,
+        })
+        _save_history(history)
+
+    # Generate new keypair
+    new_pubkey = generate_identity()
+    new_kid    = key_id(new_pubkey)
+
+    return {
+        "old_key_id":  old_key_id_str,
+        "new_key_id":  new_kid,
+        "new_pubkey":  new_pubkey,
+        "compromised": compromised,
+    }
+
+
+def get_key_history() -> list[dict[str, Any]]:
+    """Return all retired key records, newest first."""
+    return list(reversed(_load_history()))

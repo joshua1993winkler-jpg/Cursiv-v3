@@ -47,12 +47,15 @@ from typing import Any
 
 from cursiv_v215.postal.postal_key import derive_letter_keys, derive_keystream
 try:
-    from cursiv_v215.postal.postal_sign import sign_letter as _sign_letter, verify_letter as _verify_letter
+    from cursiv_v215.postal.postal_sign import (
+        sign_letter         as _sign_letter,
+        verify_with_history as _verify_with_history,
+    )
     _SIGN_OK = True
 except Exception:
     _SIGN_OK = False
-    def _sign_letter(*a, **kw):   return None   # type: ignore[misc]
-    def _verify_letter(*a, **kw): return False  # type: ignore[misc]
+    def _sign_letter(*a, **kw):          return None             # type: ignore[misc]
+    def _verify_with_history(*a, **kw):  return (False, "none")  # type: ignore[misc]
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 _POSTAL_DIR  = Path(__file__).parent.parent.parent / ".cursiv" / "postal"
@@ -281,6 +284,89 @@ def _read_seal_file(filename: str) -> tuple[bytes, bytes, str, str | None] | Non
     return letter_salt, ciphertext, auth_tag, signature
 
 
+# ── Signature status + coherence degradation ─────────────────────────────────
+
+def _sig_status_from_history(matched_key_id: str, current_pubkey: str) -> str:
+    """
+    Given a matched_key_id from verify_with_history, determine sig_status.
+    - matched current key  → "verified"
+    - matched a retired (non-compromised) historical key → "verified_rotated"
+    - matched a compromised historical key → "verified_compromised"
+    """
+    from cursiv_v215.postal.postal_sign import key_id as _kid, get_key_history
+    current_kid = _kid(current_pubkey)
+    if matched_key_id == current_kid:
+        return "verified"
+    for entry in get_key_history():
+        if entry.get("key_id") == matched_key_id:
+            return "verified_compromised" if entry.get("compromised") else "verified_rotated"
+    return "verified_rotated"   # matched something, assume rotated
+
+
+def _degrade_coherence(plaintext: bytes, sealed_ts: str) -> bytes:
+    """
+    Coherence degradation for letters verified against a COMPROMISED key.
+
+    The content passes through mostly intact but a fraction of bytes are
+    corrupted deterministically — enough to shift meaning, not enough to
+    look obviously broken. The fraction increases as the key ages.
+
+    Degradation schedule:
+        0–7 days post-compromise:   10% bytes corrupted
+        8–30 days:                  25%
+        31–90 days:                 45%
+        91+ days:                   65%  (never 100% — residual coherence preserved)
+
+    The noise is seeded from seal.uuid so it is stable per-machine:
+    the same letter always degrades the same way on the same machine.
+    """
+    from cursiv_v215.postal.postal_key import _get_seal_uuid
+    import time
+
+    # Determine degradation fraction from key age
+    try:
+        from datetime import datetime, timezone
+        sealed_dt   = datetime.fromisoformat(sealed_ts)
+        age_days    = (datetime.now() - sealed_dt).days
+    except Exception:
+        age_days = 0
+
+    if age_days <= 7:
+        fraction = 0.10
+    elif age_days <= 30:
+        fraction = 0.25
+    elif age_days <= 90:
+        fraction = 0.45
+    else:
+        fraction = 0.65
+
+    # Generate deterministic noise keystream seeded by seal.uuid
+    seed        = _get_seal_uuid() + b"\x00CURSIV-DEGRADE-v1\x00"
+    noise_seed  = hashlib.sha256(seed).digest()
+    noise_bytes = bytearray()
+    counter     = 0
+    while len(noise_bytes) < len(plaintext):
+        noise_bytes.extend(hashlib.sha256(noise_seed + counter.to_bytes(4, "big")).digest())
+        counter += 1
+    noise_bytes = bytes(noise_bytes[:len(plaintext)])
+
+    # Corrupt only word-boundary-adjacent bytes (preserves structural coherence)
+    result    = bytearray(plaintext)
+    corrupted = 0
+    target    = int(len(plaintext) * fraction)
+    for i, byte in enumerate(plaintext):
+        if corrupted >= target:
+            break
+        # Only corrupt printable non-space, non-newline characters
+        if 0x21 <= byte <= 0x7E:
+            # Shift within printable range — doesn't produce garbage
+            shifted  = ((byte - 0x21 + noise_bytes[i]) % 94) + 0x21
+            result[i] = shifted
+            corrupted += 1
+
+    return bytes(result)
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def seal_letter(
@@ -386,23 +472,31 @@ def open_letter(letter_id: str) -> str | None:
     if plaintext_bytes is None:
         return None
 
-    # Ed25519 signature verification — update index with result
+    # Ed25519 signature verification — check current key then history
     sig_status = "unsigned"
     if signature and _SIGN_OK:
         try:
             from cursiv_v215.postal.user_registry import lookup_pubkey
             sender_pubkey = lookup_pubkey(entry["from_key"])
             if sender_pubkey:
-                verified = _verify_letter(
+                verified, matched_key_id = _verify_with_history(
                     signature, sender_pubkey,
                     letter_id, entry["from_key"], entry["for_key"],
                     entry.get("sealed", ""), letter_salt, ciphertext,
                 )
-                sig_status = "verified" if verified else "INVALID"
+                if verified:
+                    # Check whether the matched key was marked compromised
+                    sig_status = _sig_status_from_history(matched_key_id, sender_pubkey)
+                else:
+                    sig_status = "INVALID"
             else:
-                sig_status = "unverified"   # sender not in contacts
+                sig_status = "unverified"
         except Exception:
             sig_status = "unverified"
+
+    # Apply coherence degradation if letter was verified against a compromised key
+    if sig_status == "verified_compromised":
+        plaintext_bytes = _degrade_coherence(plaintext_bytes, entry.get("sealed", ""))
 
     # Mark read, store sig_status
     index = _load_index()

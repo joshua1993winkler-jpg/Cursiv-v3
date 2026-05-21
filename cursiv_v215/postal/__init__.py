@@ -43,6 +43,8 @@ from cursiv_v215.postal.user_registry import (
     lookup_contact,
     list_contacts,
     resolve_recipient,
+    rotate_identity,
+    key_rotation_history,
 )
 
 __all__ = [
@@ -64,4 +66,6 @@ __all__ = [
     "lookup_contact",
     "list_contacts",
     "resolve_recipient",
+    "rotate_identity",
+    "key_rotation_history",
 ]
