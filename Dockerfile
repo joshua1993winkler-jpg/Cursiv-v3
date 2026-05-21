@@ -5,7 +5,7 @@ COPY cursiv_v215/__init__.py ./cursiv_v215/__init__.py
 RUN pip install --no-cache-dir \
     fastapi==0.111.0 \
     "uvicorn[standard]==0.29.0" \
-    "passlib[bcrypt]==1.7.4" \
+    bcrypt==4.1.3 \
     "python-jose[cryptography]==3.3.0" \
     pydantic==2.7.1
 EXPOSE 8080

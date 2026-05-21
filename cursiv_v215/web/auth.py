@@ -6,23 +6,20 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
-_PWD = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# Secret pulled from env so it's not in the repo
 _SECRET = os.environ.get("CURSIV_BOARD_SECRET", "change-me-in-production-env")
 _ALG    = "HS256"
-_TTL_H  = 72   # token lifetime in hours
+_TTL_H  = 72
 
 
 def hash_password(plain: str) -> str:
-    return _PWD.hash(plain)
+    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return _PWD.verify(plain, hashed)
+    return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
 def create_token(user_id: str, username: str) -> str:
