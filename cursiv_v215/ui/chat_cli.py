@@ -301,6 +301,18 @@ except Exception:
     def _sfed_summary(s, m) -> str:           return ""
     _PACK_EXT = ".cursivpack"
 
+# ── Quality scorer ────────────────────────────────────────────────────────
+try:
+    from cursiv_v215.core.quality_scorer import (
+        score_response  as _qs_score,
+        format_scores   as _qs_fmt,
+    )
+    _QS_OK = True
+except Exception:
+    _QS_OK = False
+    def _qs_score(*a, **kw) -> dict: return {}
+    def _qs_fmt(s, **kw) -> str:    return ""
+
 # ── Strand Store — persistent memory across sessions ──────────────────────
 try:
     from cursiv_v215.core.strand_store import (
@@ -521,9 +533,15 @@ def _draw_header(cfg: dict) -> None:
     mode_s = (f"{RED}CONFIRM[!]{RESET}"  if cfg["confirm_mode"] == "confirm" else f"{GREEN}AUTO{RESET}")
     grd_s  = (f"{GREEN}Guard:{_sfp()}{RESET}" if _CLI_GUARDIAN_OK   else f"{RED}Guard:✗{RESET}")
     obs_s  = (f"{GREEN}Obs:ON{RESET}"    if cfg.get("obsidian_enabled") else f"{RED}Obs:OFF{RESET}")
+    _tier  = cfg.get("trust_tier", 3)
+    _tier_s = (f"{GREEN}T1:SOVEREIGN{RESET}" if _tier == 1
+               else f"{GOLD}T2:LIMITED{RESET}" if _tier == 2
+               else f"{SILV2}T3:COUNCIL{RESET}")
+    _gov_s = (f"  {LAPIS}GOV{RESET}" if cfg.get("cursiv_mode") == "governor" else "")
+    _off_s = (f"  {GREEN}OFFLINE{RESET}" if cfg.get("offline_mode") else "")
     status = (
         f"  {xai_s}  {oai_s}  {ant_s}  {fa_s}  "
-        f"mode:{mode_s}  {grd_s}  {obs_s}  {SILV2}'help'{RESET}"
+        f"mode:{mode_s}  {grd_s}  {obs_s}  {_tier_s}{_gov_s}{_off_s}  {SILV2}'help'{RESET}"
     )
     print(_row(status, w))
     print(_bot(w))
@@ -686,6 +704,9 @@ _TIPS: list[tuple[str, str]] = [
     ("mode",                  "toggle AUTO / CONFIRM write mode"),
     ("obsidian on",           "sync sessions live to your Obsidian vault"),
     ("codex <prompt>",        "offline code specialist — no API key needed"),
+    ("tier 1 / 2 / 3",       "trust tier: T1=offline-only  T2=local+limited  T3=full"),
+    ("offline on / off",      "hard-block all external APIs — pure sovereign mode"),
+    ("governor on / off",     "elevate to constitutional governing mode"),
 ]
 
 
@@ -921,6 +942,14 @@ _HELP = f"""\
                             Grok generates → Claude verifies & critiques
   {LGOLD}status{RESET}                    shows active model + overseer state
 
+  {GOLD}── Modes & Trust ────────────────────────────────────────────────{RESET}
+  {LGOLD}tier 1{RESET}                    Ollama/Codex only — fully offline, zero cloud
+  {LGOLD}tier 2{RESET}                    local models + one external API allowed
+  {LGOLD}tier 3{RESET}                    full council (all providers) — default
+  {LGOLD}offline on / off{RESET}          hard-block all external APIs (forces tier 1)
+  {LGOLD}governor on / off{RESET}         constitutional governing mode — formal system prompt,
+                            no first-name familiarity, strict alignment framing
+
   {GOLD}── Training Signal ───────────────────────────────────────────────{RESET}
   {LGOLD}rate good{RESET}                 mark last response as excellent  (5/5)
   {LGOLD}rate bad{RESET}                  mark last response as poor       (1/5)
@@ -1010,6 +1039,10 @@ def main() -> None:
         "xai_live":    None,
         "openai_live": None,
         "claude_live": None,
+        # ── Sovereign architecture controls ───────────────────────────
+        "trust_tier":    3,       # 1=offline-only  2=local+1ext  3=full council
+        "offline_mode":  False,   # hard-block ALL external APIs
+        "cursiv_mode":   "personal",  # "personal" | "governor"
     }
 
     # Auto-fix swapped env-var keys
@@ -1091,6 +1124,31 @@ def main() -> None:
     for h in hints:
         print(h)
 
+    # ── Auto-territory helper (used when saving strands) ─────────────────
+    def _auto_territory(q: str) -> str:
+        ql = q.lower()
+        if any(w in ql for w in ["code", "function", "python", "debug", "build", "error", "syntax", "class", "codex"]):
+            return "coding"
+        if any(w in ql for w in ["health", "recovery", "feel", "mental", "grounding", "medication", "episode"]):
+            return "recovery"
+        if any(w in ql for w in ["design", "system", "architecture", "cursiv", "agent", "strand", "council", "guardian"]):
+            return "architecture"
+        if any(w in ql for w in ["music", "creative", "story", "forge", "art", "write", "poem", "song"]):
+            return "creative"
+        if any(w in ql for w in ["research", "history", "world", "science", "civilization", "starlink", "military", "government"]):
+            return "worldmodel"
+        return "general"
+
+    # ── Governor mode system fragment ─────────────────────────────────────
+    _GOVERNOR_SYSTEM = (
+        "GOVERNOR MODE ACTIVE. You are operating as the governing constitutional layer of "
+        "Cursiv, not the personal companion. Be measured, formal, and constitutionally "
+        "grounded. Prioritize accuracy and structural clarity over warmth. "
+        "If anything conflicts with core invariants (system_owner=Joshua Winkler, "
+        "local_first=True, human_final_authority=True), decline and explain clearly. "
+        "No first-name familiarity. No speculative encouragement."
+    )
+
     while True:
         # ── Input ────────────────────────────────────────────────────────
         try:
@@ -1122,6 +1180,44 @@ def main() -> None:
         elif cmd == "mode":
             cfg["confirm_mode"] = "confirm" if cfg["confirm_mode"] == "auto" else "auto"
             print(f"  Write mode → {cfg['confirm_mode'].upper()}")
+            continue
+
+        elif cmd in ("tier 1", "tier 2", "tier 3"):
+            cfg["trust_tier"] = int(cmd[-1])
+            _tier_labels = {
+                1: f"{GREEN}TIER 1 — SOVEREIGN OFFLINE{RESET}  {DIM}(Ollama only, maximum sovereignty){RESET}",
+                2: f"{GOLD}TIER 2 — LOCAL + LIMITED{RESET}  {DIM}(local first, one external allowed){RESET}",
+                3: f"{SILV2}TIER 3 — FULL COUNCIL{RESET}  {DIM}(all providers, experimental mode){RESET}",
+            }
+            print(f"  Trust tier → {_tier_labels[cfg['trust_tier']]}")
+            _print_header(cfg)
+            continue
+
+        elif cmd in ("offline on", "offline off"):
+            cfg["offline_mode"] = cmd == "offline on"
+            if cfg["offline_mode"]:
+                cfg["trust_tier"] = 1
+                print(f"  {GREEN}⬡ OFFLINE SOVEREIGN MODE{RESET}  "
+                      f"{DIM}All external APIs blocked. Tier forced to 1.{RESET}")
+            else:
+                print(f"  {SILV2}Offline mode OFF.{RESET}  {DIM}External routing restored.{RESET}")
+            _print_header(cfg)
+            continue
+
+        elif cmd in ("governor on", "governor off", "governor"):
+            if cmd == "governor off":
+                cfg["cursiv_mode"] = "personal"
+                print(f"  {SILV2}Governor mode OFF → Personal mode.{RESET}")
+            else:
+                cfg["cursiv_mode"] = "governor"
+                print(f"\n  {GOLD}╔══════════════════════════════════════════════════╗{RESET}")
+                print(f"  {GOLD}║       ⬡  GOVERNOR MODE ENGAGED                  ║{RESET}")
+                print(f"  {GOLD}╚══════════════════════════════════════════════════╝{RESET}")
+                print(f"  {SILV2}Constitutional enforcement elevated.{RESET}")
+                print(f"  {SILV2}Responses will be formal and constitutionally grounded.{RESET}")
+                print(f"  {DIM}Type  governor off  to return to personal mode.{RESET}")
+            print()
+            _print_header(cfg)
             continue
 
         elif cmd == "status":
@@ -3392,23 +3488,39 @@ def main() -> None:
                 continue   # block the message; do not send to API
 
         # ── Active semantic memory — inject relevant strands before send ──
+        _strand_hit_count = 0
         if _STRAND_OK and len(raw.strip()) > 10:
             try:
                 _live_mem = _strand_search(raw, top_k=3, min_score=0.12)
+                _strand_hit_count = len(_live_mem)
                 if _live_mem:
-                    _mem_lines = ["[Relevant memory from this system:"]
+                    _mem_lines = ["[Strand Memory — relevant prior knowledge from this system:"]
                     for _sm in _live_mem:
-                        _mp = (_sm.get("prompt") or "")[:80].strip()
-                        _mr = (_sm.get("response") or "")[:160].strip()
-                        if _mp or _mr:
-                            _mem_lines.append(f"  · {_mp}: {_mr}")
+                        _sq  = (_sm.get("query")     or "")[:80].strip()
+                        _ss  = (_sm.get("synthesis") or "")[:200].strip()
+                        _st  = _sm.get("territory_tag", "general")
+                        _ssc = _sm.get("score", 0)
+                        if _sq or _ss:
+                            _mem_lines.append(f"  [{_st} | score:{_ssc:.2f}] {_sq}")
+                            if _ss:
+                                _mem_lines.append(f"  → {_ss}")
                     _mem_lines.append("]")
-                    history.append({
-                        "role": "system",
-                        "content": "\n".join(_mem_lines),
-                    })
+                    history.append({"role": "system", "content": "\n".join(_mem_lines)})
+                    print(f"  {DIM}⬡ {_strand_hit_count} strand{'s' if _strand_hit_count != 1 else ''} recalled{RESET}")
             except Exception:
                 pass
+
+        # ── Trust tier + offline mode enforcement ────────────────────────
+        _tier    = cfg.get("trust_tier", 3)
+        _offline = cfg.get("offline_mode", False)
+        if _offline or _tier == 1:
+            if _force_provider not in (None, "ollama", "codex", "codex_agent"):
+                print(f"  {GOLD}⬡ SOVEREIGN{RESET}  {DIM}External route blocked — Tier 1 / offline{RESET}")
+                _force_provider = "ollama"
+
+        # ── Governor mode: prepend constitutional system fragment ─────────
+        if cfg.get("cursiv_mode") == "governor":
+            history.append({"role": "system", "content": _GOVERNOR_SYSTEM})
 
         # ── Send to model ────────────────────────────────────────────────
         last_user_msg = raw
@@ -3581,9 +3693,21 @@ def main() -> None:
                 _obs_livestream_cli(raw, full_response, _log_model)
             except Exception:
                 pass
+            # ── Quality score ─────────────────────────────────────────────
+            if _QS_OK and full_response and len(full_response.strip()) > 20:
+                try:
+                    _qs = _qs_score(
+                        raw, full_response,
+                        provider        = _log_model,
+                        strand_hits     = _strand_hit_count,
+                        guardian_clean  = True,
+                    )
+                    print(_qs_fmt(_qs))
+                    print()
+                except Exception:
+                    pass
+
             # ── Active semantic memory — auto-strand every exchange ───────
-            # Low score so these don't pollute rated strands, but they're
-            # searchable in the next message's context injection pass.
             if _STRAND_OK and len(full_response.strip()) > 40:
                 try:
                     _strand_save(
@@ -3591,7 +3715,7 @@ def main() -> None:
                         full_response,
                         tags=["live", "session"],
                         score=0.40,
-                        territory_tag="session",
+                        territory_tag=_auto_territory(raw),
                         source="chat",
                         model=_log_model,
                     )
