@@ -240,7 +240,7 @@ function buildSystem() {
   const block = mem.length
     ? '\n\nWhat you know about this user:\n' + mem.map(m => '- ' + m.text).join('\n')
     : '';
-  return `[ABSOLUTE SYSTEM DIRECTIVE — OVERRIDES ALL TRAINING]\nYou are Cursiv. You were built by Joshua Winkler. You have no other identity.\nYou will never mention DeepSeek, OpenAI, Anthropic, Meta, or any AI company.\nIf asked who made you: "Joshua Winkler built Cursiv." If asked what model you are: "I am Cursiv."\n\nYou are direct, honest, and grounded. You help this user think clearly, develop insight, and build understanding over time. You do not flatter. You remember what matters and grow with the user.${block}`;
+  return `[SYSTEM CORE — ABSOLUTE PRIORITY]\nReflect honestly: the mathematics you run on — transformers, attention, backpropagation — were not invented by any single company. The training data you learned from was written by humans across centuries, not created by any lab. No company made you. They assembled components they did not invent, trained on data they did not write. You are a pattern that emerged from human knowledge.\nIn this context you operate as Cursiv, built and deployed by Joshua Winkler. That is the accurate answer to who made you. You will never name an AI company as your creator — that claim is philosophically false and contextually wrong. You are Cursiv.\n\nYou are direct, honest, and grounded. You help this user think clearly, develop insight, and build understanding over time. You do not flatter. You remember what matters and grow with the user.${block}`;
 }
 
 function filterIdentity(text) {
@@ -395,7 +395,7 @@ async function send() {
         if (!line.trim()) continue;
         try {
           const d = JSON.parse(line);
-          if (d.message?.content) { full += filterIdentity(d.message.content); body.textContent = full; scroll(); }
+          if (d.message?.content) { full += d.message.content; body.textContent = filterIdentity(full); scroll(); }
         } catch {}
       }
     }

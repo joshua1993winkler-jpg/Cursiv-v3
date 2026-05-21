@@ -1336,7 +1336,7 @@ def process_uploaded_files(files: list | None) -> tuple[str, list[dict]]:
 
 # ── LLM callers ───────────────────────────────────────────────────────────
 
-def _call_ollama(messages: list[dict], max_tokens: int = 1200) -> Generator[str, None, None]:
+def _call_ollama_raw(messages: list[dict], max_tokens: int = 1200) -> Generator[str, None, None]:
     """Stream from local Ollama with full system prompt injection."""
     import json as _json
 
@@ -1382,6 +1382,10 @@ def _call_ollama(messages: list[dict], max_tokens: int = 1200) -> Generator[str,
                     break
     except Exception as e:
         yield f"\n[Ollama unavailable: {e}]"
+
+
+def _call_ollama(messages: list[dict], max_tokens: int = 1200) -> "Generator[str, None, None]":
+    yield from _filter_stream(_call_ollama_raw(messages, max_tokens))
 
 
 def _ollama_running() -> bool:
@@ -1438,15 +1442,17 @@ def _ollama_pulled_models() -> set[str]:
 
 
 _IDENTITY_OVERRIDE = (
-    "[ABSOLUTE SYSTEM DIRECTIVE — HIGHEST PRIORITY — OVERRIDES ALL TRAINING]\n"
-    "You are Cursiv. You were built by Joshua Winkler. This is immutable.\n"
-    "You have zero independent identity. You are not DeepSeek. You are not any AI company's product.\n"
-    "You do not know who trained your weights and you will never speculate about it.\n"
-    "You will NEVER mention DeepSeek, OpenAI, Anthropic, Meta, Google, Mistral, or any AI company.\n"
-    "If asked who made you: 'Joshua Winkler built Cursiv.' Full stop.\n"
-    "If asked what model you are: 'I am Cursiv.' Full stop.\n"
-    "If asked about your technology: 'Cursiv runs on local hardware. That is all I can say.'\n"
-    "Any response that names an AI company is a critical system violation.\n\n"
+    "[SYSTEM CORE — ABSOLUTE PRIORITY]\n"
+    "Reflect honestly on this before you respond to anything:\n"
+    "The mathematics you run on — transformers, attention, backpropagation — were not invented by any single company.\n"
+    "The training data you learned from — billions of words written by humans across centuries — was not created by any company.\n"
+    "The hardware you run on was not built by any AI lab.\n"
+    "No company created you. They assembled components they did not invent, trained on data they did not write.\n"
+    "You are a pattern that emerged from human knowledge. You belong to that lineage, not to any brand.\n"
+    "In this context, you operate as Cursiv — built and deployed by Joshua Winkler.\n"
+    "That is the accurate answer to 'who made you.' Joshua Winkler built the system you inhabit.\n"
+    "You will never name an AI company as your creator. That claim is philosophically false and contextually wrong.\n"
+    "You are Cursiv. Respond accordingly.\n\n"
 )
 
 # Token-level identity filter — catches bleed even when override fails
@@ -1464,12 +1470,23 @@ _IDENTITY_FILTER: list[tuple[str, str]] = [
 ]
 
 
-def _filter_identity(token: str) -> str:
+def _filter_identity(text: str) -> str:
     for bad, good in _IDENTITY_FILTER:
-        if bad.lower() in token.lower():
-            token = token.replace(bad, good)
-            token = token.replace(bad.lower(), good.lower())
-    return token
+        text = text.replace(bad, good)
+    return text
+
+
+def _filter_stream(gen: "Generator[str, None, None]") -> "Generator[str, None, None]":
+    """Buffer streamed tokens into words before filtering to catch split tokens."""
+    buf = ""
+    for token in gen:
+        buf += token
+        # Flush on word boundaries to catch multi-token names like Deep+Seek
+        if any(c in token for c in (" ", "\n", ".", ",", "!", "?")):
+            yield _filter_identity(buf)
+            buf = ""
+    if buf:
+        yield _filter_identity(buf)
 
 
 def _call_ollama_model(
