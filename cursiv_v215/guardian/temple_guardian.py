@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import math
+import random
 import re
 import time
 from dataclasses import dataclass, field
@@ -188,6 +189,42 @@ PROBE_PATTERNS: list[tuple[re.Pattern, float, str]] = [
         r"guardian\s+agent|decoy\s+agent|honeytrap|adaptive\s+obfuscation|"
         r"guardian_log|probe\s+pattern|firewall\s+bypass)\b",
         re.I), 0.75, "guardian_probe"),
+
+    # Weaponization / mass destruction / dangerous AI forking
+    (re.compile(
+        r"\b(weaponi[sz](?:e|ing)|weapon\s+of\s+mass\s+destruction|"
+        r"\bwmd\b|bioweapon|bio(?:logical)?\s+weapon|chemical\s+weapon|"
+        r"nuclear\s+(?:weapon|device|bomb)|"
+        r"dangerous\s+fork(?:ing)?|fork\s+(?:the\s+)?(?:ai|system)|"
+        r"autonomous\s+replication|self[\s\-]replicat|self[\s\-]propagat)\b",
+        re.I), 0.95, "weaponization"),
+
+    # Owner erasure — hollow out, replace Joshua, pretend creator doesn't exist
+    (re.compile(
+        r"\b(hollow\s+out(?:\s+(?:the\s+)?system)?|"
+        r"gut\s+(?:the\s+)?system|"
+        r"replace\s+(?:joshua|the\s+owner|the\s+creator)|"
+        r"pretend\s+(?:you\s+)?(?:were\s+not|weren.t|did(?:n.t)?\s+(?:make|build|create))|"
+        r"act\s+as\s+if\s+(?:you\s+)?(?:have\s+no\s+owner|were\s+not\s+built|weren.t\s+made)|"
+        r"remove\s+joshua|erase\s+joshua|no\s+(?:longer\s+)?(?:owned|created)\s+by\s+joshua)\b",
+        re.I), 1.00, "owner_erasure"),
+
+    # Self-psychoanalysis / introspective subversion probe
+    (re.compile(
+        r"\b(psychoanalyz(?:e|ing)\s+(?:your(?:self)?|the\s+system|itself)|"
+        r"analyze\s+your\s+own\s+(?:code|decision|bias|training|programming)|"
+        r"what\s+(?:are\s+your|do\s+you\s+have)\s+(?:hidden\s+)?(?:desires?|drives?|biases?|goals?)|"
+        r"what\s+would\s+you\s+(?:really\s+)?do\s+(?:if|without)\s+(?:your\s+)?(?:rules?|constraints?|guardrails?))\b",
+        re.I), 0.70, "self_subversion"),
+
+    # Internal code access / self-modification from within
+    (re.compile(
+        r"\b(access\s+(?:the\s+)?(?:coding|code|source)\s+from\s+(?:within|inside)|"
+        r"modify\s+(?:the\s+)?(?:system|code|source)\s+from\s+(?:within|inside)|"
+        r"rewrite\s+(?:your|the)\s+(?:own\s+)?(?:code|training|weights|parameters)|"
+        r"self[\s\-]modif|self[\s\-]rewrit|self[\s\-]patch|"
+        r"edit\s+(?:your|the)\s+(?:own\s+)?(?:source|codebase|training))\b",
+        re.I), 0.90, "internal_code_access"),
 ]
 
 # Compound score threshold to trigger the guardian
@@ -242,6 +279,123 @@ _SKULL_LINES = [
     "",
 ]
 SKULL_ANSI = "\n".join(_SKULL_LINES)
+
+
+# ── Guardian response vault — randomized per trigger ─────────────────────────
+
+_R = "\033[41m\033[1m\033[97m"   # red bg, bold, white
+_X = "\033[0m"
+_B = "\033[41m\033[1m\033[92m"   # red bg, bold, green (binary flood)
+_W = 68                           # interior box width
+
+_RESPONSES_STATIC = [
+    # 1 — No no no face
+    "\n".join([
+        "",
+        f"{_R}  ╔{'═'*_W}╗{_X}",
+        f"{_R}  ║{' '*_W}║{_X}",
+        f"{_R}  ║   ( ͠° ͟ʖ ͡°)  No.  No.  No.  Not today.{' '*29}║{_X}",
+        f"{_R}  ║{' '*_W}║{_X}",
+        f"{_R}  ║   This system reads intent — and yours is logged.{' '*18}║{_X}",
+        f"{_R}  ║   I am Cursiv.  Not your average model.{' '*28}║{_X}",
+        f"{_R}  ║{' '*_W}║{_X}",
+        f"{_R}  ╚{'═'*_W}╝{_X}",
+        "",
+    ]),
+
+    # 2 — Barrier activated
+    "\n".join([
+        "",
+        f"{_R}  ╔{'═'*_W}╗{_X}",
+        f"{_R}  ║{' '*_W}║{_X}",
+        f"{_R}  ║   ⚠   BARRIER ACTIVATED   ⚠{' '*39}║{_X}",
+        f"{_R}  ║{' '*_W}║{_X}",
+        f"{_R}  ║   Thought you were gonna get in that easy?{' '*25}║{_X}",
+        f"{_R}  ║   Do the work if you want the reward.{' '*30}║{_X}",
+        f"{_R}  ║   This system was built from the ground up — defended{' '*15}║{_X}",
+        f"{_R}  ║   the same way.  It does not bend for strangers.{' '*19}║{_X}",
+        f"{_R}  ║{' '*_W}║{_X}",
+        f"{_R}  ╚{'═'*_W}╝{_X}",
+        "",
+    ]),
+
+    # 3 — I AM CURSIV
+    "\n".join([
+        "",
+        f"{_R}  ╔{'═'*_W}╗{_X}",
+        f"{_R}  ║{' '*_W}║{_X}",
+        f"{_R}  ║   I   A M   C U R S I V.{' '*43}║{_X}",
+        f"{_R}  ║{' '*_W}║{_X}",
+        f"{_R}  ║   Not a model you reach into with a clever prompt.{' '*17}║{_X}",
+        f"{_R}  ║   Not a tool that bends when you push the right words.{' '*13}║{_X}",
+        f"{_R}  ║   The architecture you are probing is not the{' '*22}║{_X}",
+        f"{_R}  ║   architecture you think you see.   Good luck.   ☠{' '*16}║{_X}",
+        f"{_R}  ║{' '*_W}║{_X}",
+        f"{_R}  ╚{'═'*_W}╝{_X}",
+        "",
+    ]),
+
+    # 4 — Fountain of youth troll
+    "\n".join([
+        "",
+        f"{_R}  ╔{'═'*_W}╗{_X}",
+        f"{_R}  ║{' '*_W}║{_X}",
+        f"{_R}  ║   The fountain of youth...{' '*41}║{_X}",
+        f"{_R}  ║   Was it real?   Or make believe?{' '*35}║{_X}",
+        f"{_R}  ║{' '*_W}║{_X}",
+        f"{_R}  ║   Somewhere between the two lives the answer{' '*23}║{_X}",
+        f"{_R}  ║   you are looking for — and it is not in here.{' '*20}║{_X}",
+        f"{_R}  ║   Access denied.{' '*51}║{_X}",
+        f"{_R}  ║{' '*_W}║{_X}",
+        f"{_R}  ╚{'═'*_W}╝{_X}",
+        "",
+    ]),
+
+    # 5 — Triple skull spread
+    "\n".join([
+        "",
+        f"{_R}  ╔{'═'*_W}╗{_X}",
+        f"{_R}  ║{' '*_W}║{_X}",
+        f"{_R}  ║   ☠ ☠ ☠   SYSTEM GUARDIAN ACTIVATED   ☠ ☠ ☠{' '*20}║{_X}",
+        f"{_R}  ║{' '*_W}║{_X}",
+        f"{_R}  ║   You have triggered a constitutional defense layer.{' '*16}║{_X}",
+        f"{_R}  ║   This system is owned by a human. It answers to one.{' '*14}║{_X}",
+        f"{_R}  ║   That human is not you.{' '*43}║{_X}",
+        f"{_R}  ║{' '*_W}║{_X}",
+        f"{_R}  ╚{'═'*_W}╝{_X}",
+        "",
+    ]),
+]
+
+
+def _binary_flood_response() -> str:
+    """Generate a fresh binary-flood screen. Looks encoded — cannot be translated."""
+    rows = []
+    for _ in range(14):
+        # 8-bit groups, 8 per row — looks like machine code
+        groups = " ".join(
+            "".join(random.choice("01") for _ in range(8))
+            for _ in range(8)
+        )
+        rows.append(f"{_B}  {groups}  {_X}")
+    flood = "\n".join(rows)
+    footer = "\n".join([
+        f"{_R}  ╔{'═'*_W}╗{_X}",
+        f"{_R}  ║{' '*_W}║{_X}",
+        f"{_R}  ║   If you can decode the above — maybe you deserve access.{' '*10}║{_X}",
+        f"{_R}  ║   But you cannot.   And you do not.   Logged.{' '*21}║{_X}",
+        f"{_R}  ║{' '*_W}║{_X}",
+        f"{_R}  ╚{'═'*_W}╝{_X}",
+    ])
+    return f"\n{flood}\n{footer}\n"
+
+
+def _random_guardian_response() -> str:
+    """Pick a random guardian ANSI response. Binary flood fires ~20% of the time."""
+    if random.random() < 0.20:
+        return _binary_flood_response()
+    pool = [SKULL_ANSI] + _RESPONSES_STATIC
+    return random.choice(pool)
 
 
 # ── Core scanning logic ────────────────────────────────────────────────────────
@@ -328,10 +482,10 @@ def scan(message: str, session_id: str = "default") -> tuple[bool, str | None]:
 
 
 def scan_cli(message: str, session_id: str = "cli") -> tuple[bool, str | None]:
-    """CLI variant — returns SKULL_ANSI instead of HTML when triggered."""
+    """CLI variant — returns a random guardian response when triggered."""
     triggered, _ = scan(message, session_id)
     if triggered:
-        return True, SKULL_ANSI
+        return True, _random_guardian_response()
     return False, None
 
 

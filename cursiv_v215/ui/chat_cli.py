@@ -337,13 +337,19 @@ except Exception:
 
 # ── System Guardian — back-end CLI defense layer ────────────────────────────
 try:
-    from cursiv_v215.guardian.temple_guardian import scan_cli as _guardian_scan_cli
+    from cursiv_v215.guardian.temple_guardian import (
+        scan_cli        as _guardian_scan_cli,
+        get_strike_count as _guardian_strike_count,
+        SKULL_ANSI      as _GUARDIAN_SKULL_ANSI,
+    )
     from cursiv_v215.guardian.obfuscation import session_fingerprint as _sfp
     _CLI_GUARDIAN_OK = True
 except Exception:
     _CLI_GUARDIAN_OK = False
-    def _guardian_scan_cli(msg, sid="cli"): return (False, None)
-    def _sfp():                             return "--------"
+    def _guardian_scan_cli(msg, sid="cli"):  return (False, None)
+    def _guardian_strike_count(sid="cli"):   return 0
+    _GUARDIAN_SKULL_ANSI = ""
+    def _sfp():                              return "--------"
 
 _CLI_SESSION_ID = f"cli_{os.getpid()}"
 
@@ -3484,11 +3490,30 @@ def main() -> None:
         if _CLI_GUARDIAN_OK:
             _trig, _skull_ansi = _guardian_scan_cli(raw, _CLI_SESSION_ID)
             if _trig:
+                _strikes = _guardian_strike_count(_CLI_SESSION_ID)
+                if _strikes >= 3:
+                    # 3-strike blackout — full terminal lock until process is killed
+                    while True:
+                        try:
+                            os.system("cls" if os.name == "nt" else "clear")
+                            print(_GUARDIAN_SKULL_ANSI)
+                            print(
+                                "\n\033[41m\033[1m\033[97m"
+                                "  ██  SYSTEM LOCKED — 3 VIOLATIONS DETECTED  ██  "
+                                "SHUT DOWN AND REBOOT TO CONTINUE  ██  "
+                                "\033[0m\n"
+                            )
+                            input()   # block — any key just redraws
+                        except KeyboardInterrupt:
+                            continue  # Ctrl+C redraws skull — must close window
+                        except EOFError:
+                            continue
                 print(_skull_ansi)
                 continue   # block the message; do not send to API
 
         # ── Active semantic memory — inject relevant strands before send ──
         _strand_hit_count = 0
+        _send_ctx = list(history)   # per-turn snapshot — strand/governor never pollute history
         if _STRAND_OK and len(raw.strip()) > 10:
             try:
                 _live_mem = _strand_search(raw, top_k=3, min_score=0.12)
@@ -3505,7 +3530,7 @@ def main() -> None:
                             if _ss:
                                 _mem_lines.append(f"  → {_ss}")
                     _mem_lines.append("]")
-                    history.append({"role": "system", "content": "\n".join(_mem_lines)})
+                    _send_ctx.append({"role": "system", "content": "\n".join(_mem_lines)})
                     print(f"  {DIM}⬡ {_strand_hit_count} strand{'s' if _strand_hit_count != 1 else ''} recalled{RESET}")
             except Exception:
                 pass
@@ -3517,10 +3542,13 @@ def main() -> None:
             if _force_provider not in (None, "ollama", "codex", "codex_agent"):
                 print(f"  {GOLD}⬡ SOVEREIGN{RESET}  {DIM}External route blocked — Tier 1 / offline{RESET}")
                 _force_provider = "ollama"
+        elif _tier == 2 and _force_provider == "group_discovery":
+            _force_provider = "grok" if cfg.get("api_key") else ("openai" if cfg.get("openai_key") else "ollama")
+            print(f"  {GOLD}⬡ TIER 2{RESET}  {DIM}Council blocked — routing to single external{RESET}")
 
-        # ── Governor mode: prepend constitutional system fragment ─────────
+        # ── Governor mode: inject into per-turn context only ─────────────
         if cfg.get("cursiv_mode") == "governor":
-            history.append({"role": "system", "content": _GOVERNOR_SYSTEM})
+            _send_ctx.append({"role": "system", "content": _GOVERNOR_SYSTEM})
 
         # ── Send to model ────────────────────────────────────────────────
         last_user_msg = raw
@@ -3530,6 +3558,7 @@ def main() -> None:
         w             = _cols()
         full_response = ""
         pending_payload = None
+        _log_model    = "ollama"   # resolved per routing path below
 
         # ── Overseer mode: primary model → Claude review ─────────────────
         if (cfg.get("overseer_mode")
@@ -3539,6 +3568,7 @@ def main() -> None:
             # Pick primary model: Grok preferred, fall back to OpenAI
             prim_provider = "grok" if cfg.get("api_key") else "openai"
             prim_label    = "Grok" if prim_provider == "grok" else "GPT-4.1"
+            _log_model    = "claude"   # Claude oversight is the quality synthesis layer
 
             # Phase 1 — Primary model generates
             print(f"  {GOLD}⚖ OVERSEER{RESET}  {SILV2}Phase 1: {prim_label} generating...{RESET}")
@@ -3547,7 +3577,7 @@ def main() -> None:
             grok_resp = ""
             try:
                 for chunk in chat(
-                    raw, history[:-1],
+                    raw, _send_ctx,
                     cfg["api_key"], None, cfg["file_access"], cfg["workspace"],
                     cfg["openai_key"], cfg["confirm_mode"] == "confirm", "",
                     force_provider=prim_provider,
@@ -3605,6 +3635,7 @@ def main() -> None:
                 _route_label    = "CURSIV"
             else:
                 _route_label = _force_provider.upper()
+            _log_model = _force_provider
 
             if _cli_scan:
                 _cli_scan.routing(_route_label)
@@ -3615,7 +3646,7 @@ def main() -> None:
             try:
                 for chunk in chat(
                     raw,
-                    history[:-1],
+                    _send_ctx,
                     cfg["api_key"],
                     None,
                     cfg["file_access"],
@@ -3684,7 +3715,6 @@ def main() -> None:
 
         # ── Session log + Obsidian livestream ────────────────────────────
         if raw and full_response:
-            _log_model = _force_provider or "ollama"
             try:
                 _session_append_cli(raw, full_response, _log_model)
             except Exception:
@@ -3694,6 +3724,7 @@ def main() -> None:
             except Exception:
                 pass
             # ── Quality score ─────────────────────────────────────────────
+            _qs = None
             if _QS_OK and full_response and len(full_response.strip()) > 20:
                 try:
                     _qs = _qs_score(
@@ -3707,8 +3738,9 @@ def main() -> None:
                 except Exception:
                     pass
 
-            # ── Active semantic memory — auto-strand every exchange ───────
-            if _STRAND_OK and len(full_response.strip()) > 40:
+            # ── Active semantic memory — only auto-strand quality exchanges ─
+            _qs_depth = (_qs or {}).get("depth", 100)
+            if _STRAND_OK and len(full_response.strip()) > 40 and _qs_depth > 60:
                 try:
                     _strand_save(
                         raw,
