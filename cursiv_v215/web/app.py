@@ -35,7 +35,7 @@ app = FastAPI(title="Cursiv Board API", docs_url=None, redoc_url=None)
 # Allow the static board.html on any origin to call the API
 _ALLOWED_ORIGINS = os.environ.get(
     "CURSIV_BOARD_ORIGINS",
-    "https://cursiv.winklers-llc.com,http://localhost:5500,http://127.0.0.1:5500"
+    "https://cursiv.winklers-llc.com,https://api.cursiv.winklers-llc.com,http://localhost:5500,http://127.0.0.1:5500"
 ).split(",")
 
 app.add_middleware(
