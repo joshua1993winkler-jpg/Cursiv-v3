@@ -12,9 +12,21 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-_CURSIV_DIR  = Path(__file__).parent.parent.parent / ".cursiv"
-_TOKEN_FILE  = _CURSIV_DIR / "board_token.json"
-_BOARD_URL   = "https://api.cursiv.winklers-llc.com"
+_CURSIV_DIR   = Path(__file__).parent.parent.parent / ".cursiv"
+_TOKEN_FILE   = _CURSIV_DIR / "board_token.json"
+_DEVICE_FILE  = _CURSIV_DIR / "device_id"
+_BOARD_URL    = "https://api.cursiv.winklers-llc.com"
+
+
+def _get_device_id() -> str:
+    """Return stable device ID, generating one on first call."""
+    if _DEVICE_FILE.exists():
+        return _DEVICE_FILE.read_text(encoding="utf-8").strip()
+    import uuid as _uuid
+    did = str(_uuid.uuid4())
+    _CURSIV_DIR.mkdir(parents=True, exist_ok=True)
+    _DEVICE_FILE.write_text(did, encoding="utf-8")
+    return did
 
 
 def _load_token() -> dict | None:
@@ -72,7 +84,10 @@ def board_register(username: str, password: str) -> tuple[bool, str]:
         req  = urllib.request.Request(
             f"{_BOARD_URL}/api/register",
             data=body,
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type":    "application/json",
+                "X-Cursiv-Device": _get_device_id(),
+            },
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=10):

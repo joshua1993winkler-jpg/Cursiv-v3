@@ -26,7 +26,8 @@ def init_db() -> None:
                 id        TEXT PRIMARY KEY,
                 username  TEXT UNIQUE NOT NULL,
                 pw_hash   TEXT NOT NULL,
-                created   TEXT NOT NULL
+                created   TEXT NOT NULL,
+                device_id TEXT
             );
             CREATE TABLE IF NOT EXISTS posts (
                 id        TEXT PRIMARY KEY,
@@ -37,19 +38,32 @@ def init_db() -> None:
                 timestamp TEXT NOT NULL
             );
         """)
+        # migrate: add device_id column if upgrading from older schema
+        try:
+            c.execute("ALTER TABLE users ADD COLUMN device_id TEXT")
+        except Exception:
+            pass
 
 
 # ── Users ─────────────────────────────────────────────────────────────────────
 
-def create_user(username: str, pw_hash: str) -> dict[str, Any]:
+def create_user(username: str, pw_hash: str, device_id: str | None = None) -> dict[str, Any]:
     uid = str(uuid.uuid4())
     now = datetime.utcnow().isoformat()
     with _conn() as c:
         c.execute(
-            "INSERT INTO users (id, username, pw_hash, created) VALUES (?,?,?,?)",
-            (uid, username.lower().strip(), pw_hash, now),
+            "INSERT INTO users (id, username, pw_hash, created, device_id) VALUES (?,?,?,?,?)",
+            (uid, username.lower().strip(), pw_hash, now, device_id),
         )
     return {"id": uid, "username": username}
+
+
+def get_user_by_device_id(device_id: str) -> dict[str, Any] | None:
+    with _conn() as c:
+        row = c.execute(
+            "SELECT * FROM users WHERE device_id = ?", (device_id,)
+        ).fetchone()
+    return dict(row) if row else None
 
 
 def get_user_by_username(username: str) -> dict[str, Any] | None:

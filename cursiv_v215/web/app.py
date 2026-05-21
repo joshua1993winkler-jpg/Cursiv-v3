@@ -22,10 +22,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 
 try:
-    from cursiv_v215.web.db   import init_db, create_user, get_user_by_username, get_user_by_id, create_post, get_posts, delete_post, count_posts_today
+    from cursiv_v215.web.db   import init_db, create_user, get_user_by_username, get_user_by_id, create_post, get_posts, delete_post, count_posts_today, get_user_by_device_id
     from cursiv_v215.web.auth import hash_password, verify_password, create_token, decode_token
 except ImportError:
-    from db   import init_db, create_user, get_user_by_username, get_user_by_id, create_post, get_posts, delete_post, count_posts_today
+    from db   import init_db, create_user, get_user_by_username, get_user_by_id, create_post, get_posts, delete_post, count_posts_today, get_user_by_device_id
     from auth import hash_password, verify_password, create_token, decode_token
 
 # ── App ───────────────────────────────────────────────────────────────────────
@@ -125,10 +125,12 @@ def feed():
 
 
 @app.post("/api/register", status_code=201)
-def register(body: RegisterRequest):
+def register(body: RegisterRequest, x_cursiv_device: str | None = Header(None)):
     if get_user_by_username(body.username):
         raise HTTPException(409, "Username already taken")
-    create_user(body.username, hash_password(body.password))
+    if x_cursiv_device and get_user_by_device_id(x_cursiv_device):
+        raise HTTPException(409, "An account already exists for this installation")
+    create_user(body.username, hash_password(body.password), device_id=x_cursiv_device)
     return {"ok": True}
 
 
