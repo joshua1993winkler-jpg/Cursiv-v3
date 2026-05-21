@@ -414,43 +414,29 @@ except Exception:
     def _board_blast(t, s):    return (False, "board client unavailable")
 
 def _extract_blast_synthesis(full_text: str) -> str:
-    """
-    Pull just the final synthesis paragraph from a group_discovery stream.
-    Looks for the FINAL SYNTHESIS section; falls back to the last non-empty
-    paragraph if the marker isn't present.
-    """
-    FINAL_MARKER  = "FINAL SYNTHESIS — LOCAL COUNCIL"
-    END_MARKERS   = ["CURSIV BINARY SNAPSHOT", "█" * 10]
+    """Extract just the Ollama final synthesis from group_discovery output."""
+    FINAL_MARKER = "FINAL SYNTHESIS — LOCAL COUNCIL"
+    END_MARKER   = "CURSIV BINARY SNAPSHOT"
 
     start = full_text.find(FINAL_MARKER)
     if start != -1:
-        # Skip past header lines (═ rows and the marker itself)
-        content_start = start + len(FINAL_MARKER)
-        # skip decorator lines
-        while content_start < len(full_text) and full_text[content_start] in "═\n ─*":
-            nl = full_text.find("\n", content_start)
-            if nl == -1:
-                break
-            line = full_text[content_start:nl].strip("═─ *\n")
-            content_start = nl + 1
-            if line and not set(line).issubset(set("═─ *")):
-                content_start = full_text.find(line, start) + len(line)
-                break
-        # find end
-        end = len(full_text)
-        for em in END_MARKERS:
-            idx = full_text.find(em, content_start)
-            if idx != -1 and idx < end:
-                end = idx
-        extracted = full_text[content_start:end].strip(" \n─═*")
-        if extracted:
+        # Jump past the marker line and the following ═══ decorator line
+        after_marker = full_text.find("\n", start) + 1          # end of marker line
+        after_deco   = full_text.find("\n", after_marker) + 1   # end of ═══ line
+        content_start = after_deco
+
+        end = full_text.find(END_MARKER, content_start)
+        if end == -1:
+            end = len(full_text)
+
+        extracted = full_text[content_start:end].strip(" \n─-")
+        if len(extracted) > 40:
             return extracted
 
-    # Fallback: last non-empty paragraph
+    # Fallback: last substantial paragraph that isn't a header or metadata line
     paragraphs = [p.strip() for p in full_text.split("\n\n") if p.strip()]
-    # skip metadata-looking trailing paragraphs
     for p in reversed(paragraphs):
-        if len(p) > 60 and not p.startswith("*[") and "SEED:" not in p:
+        if len(p) > 60 and "SEED:" not in p and not p.startswith("*1 provider"):
             return p
     return full_text.strip()
 
