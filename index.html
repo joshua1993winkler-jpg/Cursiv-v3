@@ -706,6 +706,7 @@ footer {
     <li><a href="#new">What's New</a></li>
     <li><a href="#features">Features</a></li>
     <li><a href="#install">Install</a></li>
+    <li><a href="#web">Try Online</a></li>
     <li><a href="#history">History</a></li>
     <li><a href="#origin">Origin</a></li>
     <li><a href="https://github.com/joshua1993winkler-jpg/Cursiv" target="_blank">GitHub ↗</a></li>
@@ -1005,6 +1006,76 @@ footer {
       <span class="t-ln"><span class="t-p">Cursiv launcher </span><span class="t-cmd">→ Check for Updates → Download &amp; Install</span></span>
       <span class="t-ln"><span class="t-dim"># 71 MB. Runs over the existing install.</span></span>
       <span class="t-ln"><span class="t-dim"># Ollama, llama3.1, .cursiv/ data — all untouched.</span></span>
+    </div>
+  </div>
+</section>
+
+<!-- ══ TRY ONLINE ══════════════════════════════════════════════════ -->
+<section class="section layer" id="web">
+  <p class="section-label reveal">Web Access</p>
+  <h2 class="section-title reveal">Try Cursiv in Your Browser</h2>
+  <p class="reveal" style="color:var(--silver2);font-family:var(--serif);font-style:italic;font-size:17px;max-width:600px;margin:0 auto 56px;text-align:center;line-height:1.8">
+    No install required. Your AI runs on your machine via Ollama —<br>the web interface just gives you a window into it.
+  </p>
+
+  <div class="grid-2 reveal-group" style="margin-bottom:48px">
+    <a class="card" href="chat.html" style="text-decoration:none;display:block">
+      <div class="card-tag">Personal</div>
+      <div class="card-title" style="font-size:17px">⬡ Chat</div>
+      <div class="card-body">Your personal Cursiv session. Starts blank, builds a memory of who you are and how you think. Every conversation makes it more yours. Memory lives in your browser — never on any server.</div>
+      <div style="margin-top:14px;font-family:var(--mono);font-size:11px;color:var(--gold)">chat.html →</div>
+    </a>
+    <a class="card" href="board.html" style="text-decoration:none;display:block">
+      <div class="card-tag">Public</div>
+      <div class="card-title" style="font-size:17px">⬡ Board</div>
+      <div class="card-body">The public board. Users blast council-approved syntheses for the world to read. One thought at a time. Terminal aesthetic. Council posts come from the Cursiv CLI — verified, not typed.</div>
+      <div style="margin-top:14px;font-family:var(--mono);font-size:11px;color:var(--gold)">board.html →</div>
+    </a>
+  </div>
+
+  <p class="section-label reveal" style="margin-bottom:16px">Setup — one time only</p>
+  <div class="steps reveal">
+    <div class="step">
+      <span class="step-n">1</span>
+      <div>
+        <div class="step-t">Install Ollama</div>
+        <div class="step-b">Download from <a href="https://ollama.com" style="color:var(--gold)" target="_blank">ollama.com</a> and run the installer. Takes about two minutes.</div>
+      </div>
+    </div>
+    <div class="step">
+      <span class="step-n">2</span>
+      <div>
+        <div class="step-t">Pull a model</div>
+        <div class="step-b">Open a terminal and run: <code>ollama pull llama3.2</code> &nbsp;(~2 GB, runs fast on most hardware). Any Ollama model works.</div>
+      </div>
+    </div>
+    <div class="step">
+      <span class="step-n">3</span>
+      <div>
+        <div class="step-t">Allow this site to connect to your local Ollama</div>
+        <div class="step-b">
+          <strong style="color:var(--silver)">Mac / Linux:</strong> start Ollama with:<br>
+          <code>OLLAMA_ORIGINS=https://cursiv.winklers-llc.com ollama serve</code><br><br>
+          <strong style="color:var(--silver)">Windows:</strong> open System Properties → Advanced → Environment Variables → add:<br>
+          <code>OLLAMA_ORIGINS</code> = <code>https://cursiv.winklers-llc.com</code><br>
+          then restart Ollama from the system tray.<br><br>
+          This tells Ollama to accept requests from this site. Your AI still runs entirely on your machine.
+        </div>
+      </div>
+    </div>
+    <div class="step">
+      <span class="step-n">4</span>
+      <div>
+        <div class="step-t">Open Chat and start talking</div>
+        <div class="step-b">Go to <a href="chat.html" style="color:var(--gold)">chat.html</a>. Your Cursiv session starts blank and builds a memory of you over time. You can view and edit your memory at any time in <a href="profile.html" style="color:var(--gold)">profile.html</a>.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card reveal" style="margin-top:32px;max-width:640px">
+    <div class="card-tag">The Principle</div>
+    <div class="card-body" style="line-height:1.85">
+      Cursiv is <strong style="color:var(--silver)">Ollama-first</strong>. Your AI runs on your hardware. If you have an API key (Anthropic, OpenAI), you can add it in your profile to unlock cloud models as an upgrade — but the system works completely offline without one. That is a constitutional invariant, not a setting.
     </div>
   </div>
 </section>
