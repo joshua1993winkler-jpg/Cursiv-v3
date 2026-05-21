@@ -46,6 +46,13 @@ from pathlib import Path
 from typing import Any
 
 from cursiv_v215.postal.postal_key import derive_letter_keys, derive_keystream
+try:
+    from cursiv_v215.postal.postal_sign import sign_letter as _sign_letter, verify_letter as _verify_letter
+    _SIGN_OK = True
+except Exception:
+    _SIGN_OK = False
+    def _sign_letter(*a, **kw):   return None   # type: ignore[misc]
+    def _verify_letter(*a, **kw): return False  # type: ignore[misc]
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 _POSTAL_DIR  = Path(__file__).parent.parent.parent / ".cursiv" / "postal"
@@ -206,18 +213,21 @@ def _write_seal_file(
     letter_salt:   bytes,
     ciphertext:    bytes,
     auth_tag:      str,
+    signature:     str | None = None,
 ) -> str:
     """Write the .seal file. Returns filename."""
     payload      = letter_salt + ciphertext
     alien_body   = _encode_alien(payload)
     for_line     = _embed_tag(f"for: {recipient_key}", auth_tag)
     filename     = f"{letter_id}.seal"
+    sig_line     = f"sig: {signature}\n" if signature else ""
 
     seal_text = (
         f"CURSIV·SEALED·POST\n"
         f"id: {letter_id}\n"
         f"from: {sender_key}\n"
         f"{for_line}\n"
+        f"{sig_line}"
         f"sealed: {timestamp}\n"
         f"─────\n"
         f"{alien_body}\n"
@@ -228,10 +238,11 @@ def _write_seal_file(
     return filename
 
 
-def _read_seal_file(filename: str) -> tuple[bytes, bytes, str] | None:
+def _read_seal_file(filename: str) -> tuple[bytes, bytes, str, str | None] | None:
     """
     Parse a .seal file.
-    Returns (letter_salt, ciphertext, auth_tag) or None on parse failure.
+    Returns (letter_salt, ciphertext, auth_tag, signature_b64 | None)
+    or None on parse failure.
     """
     path = _SEALED_DIR / filename
     if not path.exists():
@@ -242,12 +253,14 @@ def _read_seal_file(filename: str) -> tuple[bytes, bytes, str] | None:
     except Exception:
         return None
 
-    # Extract auth tag from the ZWC-embedded "for:" line
-    auth_tag = ""
+    # Extract auth tag from the ZWC-embedded "for:" line, and Ed25519 sig
+    auth_tag  = ""
+    signature = None
     for line in raw.splitlines():
         if line.startswith("for:") or line.startswith("for﻿"):
             auth_tag = _extract_tag(line)
-            break
+        elif line.startswith("sig: "):
+            signature = line[5:].strip()
 
     # Extract alien body between the ─────  delimiters
     parts = raw.split("─────")
@@ -265,7 +278,7 @@ def _read_seal_file(filename: str) -> tuple[bytes, bytes, str] | None:
 
     letter_salt = payload[:32]
     ciphertext  = payload[32:]
-    return letter_salt, ciphertext, auth_tag
+    return letter_salt, ciphertext, auth_tag, signature
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -314,13 +327,22 @@ def seal_letter(
     auth_tag = _hmac.new(hmac_key, letter_salt + ciphertext, "sha256").hexdigest()
 
     if progress_cb:
-        progress_cb("encode")
+        progress_cb("sign")
 
     now       = datetime.now()
     timestamp = now.isoformat()
+
+    # Ed25519 identity signature — proves this machine's identity key authored the letter
+    signature = _sign_letter(
+        letter_id, sender_key, recipient_key, timestamp, letter_salt, ciphertext
+    ) if _SIGN_OK else None
+
+    if progress_cb:
+        progress_cb("encode")
+
     filename  = _write_seal_file(
         letter_id, sender_key, recipient_key, timestamp,
-        letter_salt, ciphertext, auth_tag,
+        letter_salt, ciphertext, auth_tag, signature,
     )
 
     if progress_cb:
@@ -355,7 +377,7 @@ def open_letter(letter_id: str) -> str | None:
     if parsed is None:
         return None
 
-    letter_salt, ciphertext, auth_tag = parsed
+    letter_salt, ciphertext, auth_tag, signature = parsed
 
     plaintext_bytes = _decrypt(
         letter_salt, ciphertext, auth_tag,
@@ -364,14 +386,44 @@ def open_letter(letter_id: str) -> str | None:
     if plaintext_bytes is None:
         return None
 
-    # Mark read
+    # Ed25519 signature verification — update index with result
+    sig_status = "unsigned"
+    if signature and _SIGN_OK:
+        try:
+            from cursiv_v215.postal.user_registry import lookup_pubkey
+            sender_pubkey = lookup_pubkey(entry["from_key"])
+            if sender_pubkey:
+                verified = _verify_letter(
+                    signature, sender_pubkey,
+                    letter_id, entry["from_key"], entry["for_key"],
+                    entry.get("sealed", ""), letter_salt, ciphertext,
+                )
+                sig_status = "verified" if verified else "INVALID"
+            else:
+                sig_status = "unverified"   # sender not in contacts
+        except Exception:
+            sig_status = "unverified"
+
+    # Mark read, store sig_status
     index = _load_index()
     for e in index:
         if e.get("id") == letter_id:
-            e["read"] = True
+            e["read"]       = True
+            e["sig_status"] = sig_status
     _save_index(index)
 
     return plaintext_bytes.decode("utf-8", errors="replace")
+
+
+def get_sig_status(letter_id: str) -> str:
+    """
+    Return the last-known signature status for a letter:
+    'verified', 'unverified', 'unsigned', 'INVALID', or 'unknown'.
+    """
+    entry = get_sealed_entry(letter_id)
+    if not entry:
+        return "unknown"
+    return entry.get("sig_status", "unknown")
 
 
 def get_sealed_entry(letter_id: str) -> dict[str, Any] | None:

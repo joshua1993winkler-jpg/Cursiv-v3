@@ -26,6 +26,7 @@ from cursiv_v215.postal.sealed_store import (
     seal_letter,
     open_letter,
     get_sealed_entry,
+    get_sig_status,
     letters_for,
     letters_from,
     all_letters,
@@ -34,11 +35,21 @@ from cursiv_v215.postal.sealed_store import (
     import_sealpack,
 )
 from cursiv_v215.postal.council_reader import council_walkthrough
+from cursiv_v215.postal.user_registry import (
+    setup_identity,
+    my_identity,
+    add_contact,
+    remove_contact,
+    lookup_contact,
+    list_contacts,
+    resolve_recipient,
+)
 
 __all__ = [
     "seal_letter",
     "open_letter",
     "get_sealed_entry",
+    "get_sig_status",
     "letters_for",
     "letters_from",
     "all_letters",
@@ -46,4 +57,11 @@ __all__ = [
     "export_sealpack",
     "import_sealpack",
     "council_walkthrough",
+    "setup_identity",
+    "my_identity",
+    "add_contact",
+    "remove_contact",
+    "lookup_contact",
+    "list_contacts",
+    "resolve_recipient",
 ]

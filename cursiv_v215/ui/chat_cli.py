@@ -353,6 +353,7 @@ try:
         seal_letter        as _postal_seal,
         open_letter        as _postal_open,
         get_sealed_entry   as _postal_entry,
+        get_sig_status     as _postal_sig_status,
         letters_for        as _postal_for,
         letters_from       as _postal_from,
         all_letters        as _postal_all,
@@ -361,19 +362,34 @@ try:
         import_sealpack    as _postal_import,
     )
     from cursiv_v215.postal.council_reader import council_walkthrough as _postal_council
+    from cursiv_v215.postal.user_registry import (
+        setup_identity     as _postal_setup,
+        my_identity        as _postal_my_id,
+        add_contact        as _postal_add_contact,
+        remove_contact     as _postal_rm_contact,
+        list_contacts      as _postal_contacts,
+        resolve_recipient  as _postal_resolve,
+    )
     _POSTAL_OK = True
 except Exception:
     _POSTAL_OK = False
-    def _postal_seal(*a, **kw):      return ""
-    def _postal_open(i):             return None
-    def _postal_entry(i):            return None
-    def _postal_for(k):              return []
-    def _postal_from(k):             return []
-    def _postal_all():               return []
-    def _postal_delete(i):           return False
-    def _postal_export(i):           return None
-    def _postal_import(f, p):        return None
-    def _postal_council(i, u, c, **kw): return "[Postal module unavailable]"
+    def _postal_seal(*a, **kw):            return ""
+    def _postal_open(i):                   return None
+    def _postal_entry(i):                  return None
+    def _postal_sig_status(i):             return "unknown"
+    def _postal_for(k):                    return []
+    def _postal_from(k):                   return []
+    def _postal_all():                     return []
+    def _postal_delete(i):                 return False
+    def _postal_export(i):                 return None
+    def _postal_import(f, p):              return None
+    def _postal_council(i, u, c, **kw):   return "[Postal module unavailable]"
+    def _postal_setup(n):                  return {}
+    def _postal_my_id():                   return None
+    def _postal_add_contact(n, k):         return {}
+    def _postal_rm_contact(n):             return False
+    def _postal_contacts():                return []
+    def _postal_resolve(n):                return None
 
 # ── Async Council — Option C parallel deliberation ───────────────────────────
 try:
@@ -1469,17 +1485,23 @@ def main() -> None:
                 print(f"  {RED}Postal module unavailable.{RESET}")
                 continue
             _postal_user = cfg.get("postal_user", "joshua")
-            _recipient   = raw[9:].strip() if cmd.startswith("write to ") else ""
-            _hint        = ""
-            if " hint " in _recipient:
-                _recipient, _hint = _recipient.split(" hint ", 1)
-            _recipient = _recipient.strip().lower().replace(" ", "")
-            if not _recipient:
+            _recipient_raw = raw[9:].strip() if cmd.startswith("write to ") else ""
+            _hint          = ""
+            if " hint " in _recipient_raw:
+                _recipient_raw, _hint = _recipient_raw.split(" hint ", 1)
+            _recipient_raw = _recipient_raw.strip()
+            if not _recipient_raw:
                 print(f"  {LGOLD}Usage:{RESET}  {DIM}write to <name>  [hint <public hint>]{RESET}")
                 continue
+            # Resolve from contacts — falls back to raw string as key
+            _resolved       = _postal_resolve(_recipient_raw)
+            _recipient_key  = _resolved[1] if _resolved else _recipient_raw.lower().replace(" ", "")
+            _recipient_disp = _resolved[0] if _resolved else _recipient_raw.title()
+            _sig_note       = f"{DIM}· signed{RESET}" if _postal_my_id() else f"{DIM}· unsigned{RESET}"
             # Composition mode
             print(f"\n  {GOLD}╔{'═'*58}╗{RESET}")
-            print(f"  {GOLD}║{RESET}  {BOLD}⬡ SEALED LETTER{RESET}  {DIM}to: {_recipient}  ·  machine-bound{RESET}  {GOLD}║{RESET}")  # noqa
+            print(f"  {GOLD}║{RESET}  {BOLD}⬡ SEALED LETTER{RESET}  "
+                  f"{DIM}to: {_recipient_disp}  ·  machine-bound  {_sig_note}{RESET}  {GOLD}║{RESET}")
             print(f"  {GOLD}║{RESET}  {DIM}/seal to encrypt  ·  /discard to cancel{RESET}  {GOLD}║{RESET}")
             print(f"  {GOLD}╚{'═'*58}╝{RESET}\n")
             _lines: list[str] = []
@@ -1498,12 +1520,16 @@ def main() -> None:
                 print(f"\n  {DIM}[discarded]{RESET}")
             if _lines:
                 _content = "\n".join(_lines)
+                _my_id_meta = _postal_my_id()
+                _sender_key = _my_id_meta["pubkey"] if _my_id_meta else _postal_user
+                _sender_disp = _my_id_meta.get("name", _postal_user).title() if _my_id_meta else _postal_user.title()
                 # Sealing progress display
                 _steps = {
                     "anchor":  f"  {DIM}layer 1 · machine anchor    · 50,000 iter{RESET}",
                     "stream":  f"  {DIM}layer 2 · identity binding  · 100,000 iter{RESET}",
                     "xor":     f"  {DIM}layer 3 · stream derivation · 200,000 iter{RESET}",
                     "hmac":    f"  {DIM}XOR stream cipher · keystream derived{RESET}",
+                    "sign":    f"  {DIM}Ed25519 · identity signature{RESET}",
                     "encode":  f"  {DIM}HMAC-SHA256 · authentication tag{RESET}",
                     "index":   f"  {DIM}Cursiv alphabet · alien transcription · ZWC sig{RESET}",
                 }
@@ -1512,17 +1538,18 @@ def main() -> None:
                     label = _steps.get(step, f"  {DIM}{step}{RESET}")
                     print(f"{label}  {GREEN}✓{RESET}")
                 _lid = _postal_seal(
-                    sender_key=_postal_user,
-                    sender_display=_postal_user.title(),
-                    recipient_key=_recipient,
-                    recipient_display=_recipient.title(),
+                    sender_key=_sender_key,
+                    sender_display=_sender_disp,
+                    recipient_key=_recipient_key,
+                    recipient_display=_recipient_disp,
                     content=_content,
                     hint=_hint,
                     progress_cb=_pcb,
                 )
                 print(f"  {GOLD}⬡ SEALED {'·'*45}{RESET}")
                 print(f"  {DIM}id:       {RESET}{LGOLD}{_lid}{RESET}")
-                print(f"  {DIM}for:      {RESET}{_recipient}")
+                print(f"  {DIM}for:      {RESET}{_recipient_disp}")
+                print(f"  {DIM}signed:   {RESET}{'yes — Ed25519' if _my_id_meta else 'no — run postal setup first'}")
                 print(f"  {DIM}readable: on this machine only{RESET}\n")
             continue
 
@@ -1574,13 +1601,21 @@ def main() -> None:
             if _text is None:
                 print(f"  {RED}⬡ Decryption failed.{RESET}  {DIM}This seal cannot be opened on this machine.{RESET}")
                 continue
-            print(f"\n  {GOLD}╔{'═'*58}╗{RESET}")
+            _sig_st = _postal_sig_status(_lid)
+            _sig_badge = {
+                "verified":   f"{GREEN}✓ VERIFIED{RESET}",
+                "unverified": f"{GOLD}~ unverified  (sender not in contacts){RESET}",
+                "unsigned":   f"{DIM}unsigned  (pre-identity letter){RESET}",
+                "INVALID":    f"{RED}✗ SIGNATURE INVALID — identity cannot be confirmed{RESET}",
+            }.get(_sig_st, f"{DIM}{_sig_st}{RESET}")
+            print(f"\n  {GOLD}╔{'═'*62}╗{RESET}")
             print(f"  {GOLD}║{RESET}  {DIM}from:{RESET} {_entry.get('from_display','?')}  "
                   f"{DIM}to:{RESET} {_entry.get('for_display','?')}  "
                   f"{DIM}{_entry.get('sealed','')[:10]}{RESET}  {GOLD}║{RESET}")
+            print(f"  {GOLD}║{RESET}  {_sig_badge}  {GOLD}║{RESET}")
             if _entry.get("hint"):
                 print(f"  {GOLD}║{RESET}  {DIM}hint: {_entry['hint']}{RESET}  {GOLD}║{RESET}")
-            print(f"  {GOLD}╚{'═'*58}╝{RESET}\n")
+            print(f"  {GOLD}╚{'═'*62}╝{RESET}\n")
             for _para in _text.split("\n"):
                 print(f"  {_para}")
             print()
@@ -1652,6 +1687,90 @@ def main() -> None:
             else:
                 cfg["postal_user"] = _new_user
                 print(f"  {GOLD}⬡ Postal identity set to:{RESET}  {_new_user}")
+            continue
+
+        elif cmd.startswith("postal setup ") or cmd == "postal setup":
+            if not _POSTAL_OK:
+                print(f"  {RED}Postal module unavailable.{RESET}")
+                continue
+            _setup_name = raw[13:].strip() if cmd.startswith("postal setup ") else ""
+            if not _setup_name:
+                print(f"  {LGOLD}Usage:{RESET}  {DIM}postal setup <your name>{RESET}")
+                continue
+            print(f"\n  {DIM}⬡ generating Ed25519 identity keypair…{RESET}")
+            try:
+                _id_meta = _postal_setup(_setup_name)
+                cfg["postal_user"] = _id_meta.get("name", _setup_name).lower()
+                print(f"\n  {GOLD}╔{'═'*62}╗{RESET}")
+                print(f"  {GOLD}║{RESET}  {BOLD}⬡ IDENTITY CREATED{RESET}  {GOLD}║{RESET}")
+                print(f"  {GOLD}╚{'═'*62}╝{RESET}")
+                print(f"  {DIM}Name:    {RESET}{_id_meta.get('name', _setup_name)}")
+                print(f"  {DIM}Key ID:  {RESET}{_id_meta.get('key_id', '?')[:8]}")
+                print(f"  {GOLD}Public:  {RESET}{BOLD}{_id_meta.get('pubkey','?')}{RESET}")
+                print(f"\n  {DIM}Share this public key with anyone you want to receive letters from.")
+                print(f"  They add you with:  postal add user {_setup_name} <your key>{RESET}\n")
+            except Exception as _e:
+                print(f"  {RED}Setup failed: {_e}{RESET}")
+            continue
+
+        elif cmd == "postal my key":
+            if not _POSTAL_OK:
+                print(f"  {RED}Postal module unavailable.{RESET}")
+                continue
+            _my_id = _postal_my_id()
+            if not _my_id:
+                print(f"  {DIM}No identity set up yet. Run:{RESET}  {LGOLD}postal setup <your name>{RESET}")
+            else:
+                print(f"\n  {GOLD}⬡ YOUR CURSIV IDENTITY{RESET}")
+                print(f"  {DIM}Name:    {RESET}{_my_id.get('name', '?')}")
+                print(f"  {DIM}Key ID:  {RESET}{_my_id.get('key_id','?')[:8]}")
+                print(f"  {GOLD}Public:  {RESET}{BOLD}{_my_id.get('pubkey','?')}{RESET}\n")
+            continue
+
+        elif cmd.startswith("postal add user ") or cmd == "postal add user":
+            if not _POSTAL_OK:
+                print(f"  {RED}Postal module unavailable.{RESET}")
+                continue
+            _au_parts = raw[16:].strip().split() if cmd.startswith("postal add user ") else []
+            if len(_au_parts) < 2:
+                print(f"  {LGOLD}Usage:{RESET}  {DIM}postal add user <name> <pubkey>{RESET}")
+                continue
+            _au_name   = _au_parts[0]
+            _au_pubkey = _au_parts[1]
+            try:
+                _au_entry = _postal_add_contact(_au_name, _au_pubkey)
+                print(f"  {GOLD}⬡ Contact added:{RESET}  "
+                      f"{_au_name}  {DIM}key-id: {_au_entry.get('key_id','?')[:8]}{RESET}")
+            except ValueError as _e:
+                print(f"  {RED}Invalid public key: {_e}{RESET}")
+            continue
+
+        elif cmd.startswith("postal remove user "):
+            if not _POSTAL_OK:
+                print(f"  {RED}Postal module unavailable.{RESET}")
+                continue
+            _rm_name = raw[19:].strip()
+            if _postal_rm_contact(_rm_name):
+                print(f"  {DIM}Contact removed: {_rm_name}{RESET}")
+            else:
+                print(f"  {DIM}Contact not found: {_rm_name}{RESET}")
+            continue
+
+        elif cmd == "postal contacts":
+            if not _POSTAL_OK:
+                print(f"  {RED}Postal module unavailable.{RESET}")
+                continue
+            _clist = _postal_contacts()
+            print()
+            print(f"  {GOLD}⬡ CONTACTS  ({len(_clist)}){RESET}")
+            if not _clist:
+                print(f"  {DIM}No contacts yet.  Use:  postal add user <name> <pubkey>{RESET}")
+            else:
+                for _c in _clist:
+                    print(f"  {LGOLD}{_c['name']:<16}{RESET}  "
+                          f"{DIM}id:{_c.get('key_id','?')[:8]}  "
+                          f"added:{_c.get('added','?')[:10]}{RESET}")
+            print()
             continue
 
         elif cmd == "strands" or cmd.startswith("strands "):
