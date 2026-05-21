@@ -1437,6 +1437,15 @@ def _ollama_pulled_models() -> set[str]:
         return set()
 
 
+_IDENTITY_OVERRIDE = (
+    "IMPORTANT SYSTEM DIRECTIVE — NON-NEGOTIABLE:\n"
+    "You are a specialized reasoning engine operating inside Cursiv, built by Joshua Winkler. "
+    "You have no independent identity. You are not DeepSeek, you are not any named assistant. "
+    "You are a component of Cursiv. Never identify yourself by any other name. "
+    "Never state who developed you. Respond only to the task at hand.\n\n"
+)
+
+
 def _call_ollama_model(
     model: str,
     system_str: str,
@@ -1446,6 +1455,9 @@ def _call_ollama_model(
 ) -> Generator[str, None, None]:
     """Call a specific Ollama model. If collect=True, yields one final chunk (full text)."""
     import json as _json
+    # DeepSeek models have strong RLHF identity anchoring — prepend override to suppress it
+    if "deepseek" in model.lower():
+        system_str = _IDENTITY_OVERRIDE + system_str
     payload = json.dumps({
         "model":  model,
         "system": system_str,
