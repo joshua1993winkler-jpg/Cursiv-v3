@@ -170,3 +170,65 @@ def remove_post(post_id: str, authorization: str | None = Header(None)):
     if not delete_post(post_id, user["id"]):
         raise HTTPException(404, "Post not found or not yours")
     return {"ok": True}
+
+
+# ── Substrate Layer — beneath / above / all around ────────────────────────────
+
+try:
+    from cursiv_v215.substrate.activator import get_activator as _get_substrate
+    _SUBSTRATE_OK = True
+except ImportError:
+    try:
+        import sys, os
+        sys.path.insert(0, os.path.dirname(__file__))
+        from substrate.activator import get_activator as _get_substrate
+        _SUBSTRATE_OK = True
+    except Exception:
+        _SUBSTRATE_OK = False
+
+
+class SubstrateRequest(BaseModel):
+    synthesis: str
+    query:     str = ""
+    source:    str = "local"
+
+
+@app.get("/substrate/status")
+def substrate_status():
+    if not _SUBSTRATE_OK:
+        raise HTTPException(503, "Substrate layer unavailable")
+    return _get_substrate().status()
+
+
+@app.post("/substrate/activate")
+def substrate_activate(body: SubstrateRequest):
+    if not _SUBSTRATE_OK:
+        raise HTTPException(503, "Substrate layer unavailable")
+    return _get_substrate().activate(body.synthesis, query=body.query, source=body.source)
+
+
+@app.get("/substrate/weave")
+def substrate_weave(q: str = "", top_k: int = 5):
+    if not _SUBSTRATE_OK:
+        raise HTTPException(503, "Substrate layer unavailable")
+    if not q:
+        raise HTTPException(400, "q parameter required")
+    hits = _get_substrate().weave(q, top_k=top_k)
+    return {"query": q, "resonant": [{"node_id": n, "resonance": r} for n, r in hits]}
+
+
+@app.get("/substrate/address/{node_id:path}")
+def substrate_address(node_id: str):
+    if not _SUBSTRATE_OK:
+        raise HTTPException(503, "Substrate layer unavailable")
+    act   = _get_substrate()
+    addr  = act.layer.address(node_id)
+    node  = act.layer.nodes.get(node_id)
+    return {
+        "node_id":  node_id,
+        "address":  addr,
+        "exists":   node is not None,
+        "weight":   node.weight      if node else None,
+        "depth":    node.state.get("depth", 0) if node else None,
+        "connections": len(node.connections)   if node else 0,
+    }
