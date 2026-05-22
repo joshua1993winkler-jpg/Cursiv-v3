@@ -65,6 +65,11 @@ _OLLAMA_EXE_PATH      = (
 )
 
 
+def _csb_desktop_shortcut_exists() -> bool:
+    desktop = Path(os.environ.get("USERPROFILE", "")) / "Desktop" / "Cursiv Substrate Browser.lnk"
+    return desktop.exists()
+
+
 def _is_ollama_installed() -> bool:
     import shutil
     return bool(shutil.which("ollama")) or _OLLAMA_EXE_PATH.exists()
@@ -667,25 +672,55 @@ class CursivLauncher(QMainWindow):
         self._codex_dl_btn.clicked.connect(self._download_codex_models)
         col.addWidget(self._codex_dl_btn)
 
-        _substrate_style = f"""
-            QPushButton {{
-                background: transparent; color: #8844cc;
-                font-size: 11px; font-weight: 600;
-                border: 1px solid #5522aa; border-radius: 4px;
-                padding: 2px 6px;
-            }}
-            QPushButton:hover   {{ background: rgba(136,68,204,0.10); border-color: #8844cc; }}
-            QPushButton:pressed {{ background: rgba(136,68,204,0.20); }}
-        """
-        self._substrate_btn = QPushButton("⬡  Substrate Browser")
-        self._substrate_btn.setFixedHeight(28)
-        self._substrate_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._substrate_btn.setToolTip(
-            "Open the Cursiv substrate browser — curs.http:// protocol, RUW graph, live feed"
+        # ── Cursiv Substrate Browser install strip ────────────────────────
+        csb_box = QWidget()
+        csb_installed = _csb_desktop_shortcut_exists()
+        csb_box.setStyleSheet(
+            f"background: {'#0d1a0d' if csb_installed else '#0d0d1a'};"
+            f" border: 1px solid {'#1a4d1a' if csb_installed else '#2a1a4d'};"
+            f" border-radius: 6px;"
         )
-        self._substrate_btn.setStyleSheet(_substrate_style)
-        self._substrate_btn.clicked.connect(self._open_substrate_browser)
-        col.addWidget(self._substrate_btn)
+        csb_lay = QHBoxLayout(csb_box)
+        csb_lay.setContentsMargins(12, 7, 12, 7)
+        csb_lay.setSpacing(10)
+
+        csb_lbl = QLabel(
+            "✓  Substrate Browser installed" if csb_installed
+            else "⬡  Cursiv Substrate Browser"
+        )
+        csb_lbl.setStyleSheet(
+            f"color: {'#44cc66' if csb_installed else '#8844cc'};"
+            f" font-size: 11px; background: transparent; border: none;"
+        )
+        csb_lay.addWidget(csb_lbl, 1)
+
+        self._csb_btn = QPushButton(
+            "Open" if csb_installed else "Install + Desktop Icon"
+        )
+        self._csb_btn.setFixedHeight(24)
+        self._csb_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._csb_btn.setToolTip(
+            "Open the substrate browser" if csb_installed
+            else "Install PyQt6-WebEngine and create a desktop shortcut for the Cursiv Substrate Browser"
+        )
+        self._csb_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {'#1a4d1a' if csb_installed else '#2a1a4d'};
+                color: {'#88ffaa' if csb_installed else '#cc99ff'};
+                font-size: 10px; font-weight: 600;
+                border: 1px solid {'#44cc66' if csb_installed else '#8844cc'};
+                border-radius: 4px; padding: 1px 8px;
+            }}
+            QPushButton:hover   {{ background: {'#1a6d1a' if csb_installed else '#3d1a6d'}; }}
+            QPushButton:pressed {{ background: {'#0d300d' if csb_installed else '#1a0d30'}; }}
+            QPushButton:disabled {{ color: {SILV2}; border-color: {BORDER}; }}
+        """)
+        if csb_installed:
+            self._csb_btn.clicked.connect(self._open_substrate_browser)
+        else:
+            self._csb_btn.clicked.connect(self._install_csb)
+        csb_lay.addWidget(self._csb_btn)
+        col.addWidget(csb_box)
 
         return col
 
@@ -1011,23 +1046,130 @@ class CursivLauncher(QMainWindow):
 
         threading.Thread(target=_download, daemon=True).start()
 
-    # ── Substrate Browser ─────────────────────────────────────────────────
+    # ── Cursiv Substrate Browser (CSB) ────────────────────────────────────
 
     def _open_substrate_browser(self):
+        csb = _HERE / "csb_standalone.py"
+        python = _find_python().replace("python.exe", "pythonw.exe")
+        if not Path(python).exists():
+            python = _find_python()
         try:
-            from cursiv_browser import open_browser
-        except ImportError:
-            try:
-                sys.path.insert(0, str(_HERE))
-                from cursiv_browser import open_browser
-            except ImportError as exc:
-                QMessageBox.warning(
-                    self,
-                    "Cursiv Browser",
-                    f"Could not load substrate browser:\n{exc}",
-                )
-                return
-        open_browser(parent=None)
+            subprocess.Popen(
+                [python, str(csb)],
+                cwd=str(_ROOT),
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "Cursiv Substrate Browser",
+                                f"Could not launch CSB:\n{exc}")
+
+    def _install_csb(self):
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Install Cursiv Substrate Browser")
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.setText("<b>Install Cursiv Substrate Browser?</b>")
+        msg.setInformativeText(
+            "This will:\n\n"
+            "  1. Install PyQt6-WebEngine (if not already installed)\n"
+            "  2. Create a desktop shortcut — Cursiv Substrate Browser\n\n"
+            "After installation you can launch the substrate browser directly\n"
+            "from your desktop without opening the Cursiv Launcher.\n\n"
+            "Requires an internet connection for the WebEngine download (~80 MB)."
+        )
+        msg.setStandardButtons(
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel
+        )
+        msg.button(QMessageBox.StandardButton.Ok).setText("Install")
+        msg.button(QMessageBox.StandardButton.Cancel).setText("Not Now")
+        msg.setStyleSheet(QSS)
+        if msg.exec() != QMessageBox.StandardButton.Ok:
+            return
+
+        self._csb_btn.setEnabled(False)
+        self._csb_btn.setText("Installing…")
+        self._set_status("Installing Cursiv Substrate Browser…")
+        threading.Thread(target=self._csb_install_thread, daemon=True).start()
+
+    def _csb_install_thread(self):
+        import subprocess as _sp
+        python = _find_python()
+
+        # Step 1: install / upgrade PyQt6-WebEngine
+        try:
+            _sp.run(
+                [python, "-m", "pip", "install", "--upgrade",
+                 "PyQt6>=6.7.0", "PyQt6-WebEngine>=6.7.0"],
+                check=True,
+                capture_output=True,
+            )
+        except Exception as exc:
+            QTimer.singleShot(0, lambda e=str(exc): self._csb_install_done(False, e))
+            return
+
+        # Step 2: create desktop shortcut via PowerShell
+        csb_script  = str(_HERE / "csb_standalone.py").replace("\\", "\\\\")
+        working_dir = str(_ROOT).replace("\\", "\\\\")
+        desktop     = Path(os.environ.get("USERPROFILE", "")) / "Desktop"
+        link_path   = str(desktop / "Cursiv Substrate Browser.lnk").replace("\\", "\\\\")
+
+        # Find icon
+        icon_path = ""
+        for name in ("cursiv.ico", "tray.ico"):
+            p = _HERE / "resources" / "icons" / name
+            if p.exists():
+                icon_path = str(p).replace("\\", "\\\\")
+                break
+
+        pythonw = python.replace("python.exe", "pythonw.exe")
+        if not Path(pythonw).exists():
+            pythonw = python
+        pythonw = pythonw.replace("\\", "\\\\")
+
+        icon_line = f'$sc.IconLocation = "{icon_path},0" ;' if icon_path else ""
+
+        ps_script = (
+            f'$ws = New-Object -ComObject WScript.Shell ;'
+            f'$sc = $ws.CreateShortcut("{link_path}") ;'
+            f'$sc.TargetPath = "{pythonw}" ;'
+            f'$sc.Arguments = \\"{csb_script}\\" ;'
+            f'$sc.WorkingDirectory = "{working_dir}" ;'
+            f'$sc.Description = "Cursiv Substrate Browser — local substrate layer" ;'
+            f'{icon_line}'
+            f'$sc.Save()'
+        )
+
+        try:
+            _sp.run(
+                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                 "-Command", ps_script],
+                check=True,
+                capture_output=True,
+            )
+            QTimer.singleShot(0, lambda: self._csb_install_done(True, ""))
+        except Exception as exc:
+            QTimer.singleShot(0, lambda e=str(exc): self._csb_install_done(False, e))
+
+    def _csb_install_done(self, ok: bool, err: str):
+        if ok:
+            self._csb_btn.setEnabled(True)
+            self._csb_btn.setText("Open")
+            self._csb_btn.clicked.disconnect()
+            self._csb_btn.clicked.connect(self._open_substrate_browser)
+            self._set_status("Cursiv Substrate Browser installed — icon on your Desktop")
+            QMessageBox.information(
+                self, "CSB Installed",
+                "Cursiv Substrate Browser is ready.\n\n"
+                "A shortcut has been added to your Desktop.\n"
+                "You can also click Open here to launch it now."
+            )
+        else:
+            self._csb_btn.setEnabled(True)
+            self._csb_btn.setText("Install + Desktop Icon")
+            self._set_status("CSB install failed — see details")
+            QMessageBox.warning(
+                self, "CSB Install Failed",
+                f"Could not complete installation:\n\n{err}"
+            )
 
     # ── Tray ──────────────────────────────────────────────────────────────
 
@@ -1070,7 +1212,10 @@ class CursivLauncher(QMainWindow):
         menu.addAction(codex_act)
 
         substrate_act = QAction("⬡  Substrate Browser", self)
-        substrate_act.triggered.connect(self._open_substrate_browser)
+        if _csb_desktop_shortcut_exists():
+            substrate_act.triggered.connect(self._open_substrate_browser)
+        else:
+            substrate_act.triggered.connect(self._install_csb)
         menu.addAction(substrate_act)
 
         menu.addSeparator()
