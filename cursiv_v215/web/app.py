@@ -24,15 +24,19 @@ Routes:
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import logging
 import os
 import secrets as _secrets_mod
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Header, Query
+from fastapi import FastAPI, HTTPException, Header, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel, field_validator
+
+_log = logging.getLogger("cursiv.sentinel")
 
 _WEB_DIR     = Path(__file__).parent
 _UI_FILE     = _WEB_DIR / "substrate_ui.html"
@@ -65,9 +69,91 @@ except ImportError:
         decode_token,
     )
 
+# ── Sentinel + Maze ───────────────────────────────────────────────────────────
+
+try:
+    from cursiv_v215.web.sentinel import (
+        Ring, classify as _sentinel_classify,
+        get_maze_node, set_maze_node,
+        probe_profile, needs_alert, active_probes,
+    )
+    from cursiv_v215.web.maze import (
+        respond as _maze_respond,
+        delay_for_ring as _maze_delay,
+        random_entry as _maze_random_entry,
+    )
+    _SENTINEL_OK = True
+except ImportError:
+    _SENTINEL_OK = False
+
 # ── App ───────────────────────────────────────────────────────────────────────
 
 app = FastAPI(title="Cursiv Board API", docs_url=None, redoc_url=None)
+
+_SENTINEL_ALERT_WEBHOOK = os.environ.get("CURSIV_ALERT_WEBHOOK", "")
+
+
+async def _run_sentinel(request: Request) -> JSONResponse | None:
+    """
+    Called at the top of every fleet/remote route and the catch-all.
+    Returns a JSONResponse if the request should be trapped, else None.
+    Legitimate requests get None back and proceed normally.
+    """
+    if not _SENTINEL_OK:
+        return None
+
+    ip    = request.client.host if request.client else "unknown"
+    path  = request.url.path
+    token = request.headers.get("X-Fleet-Token") or request.headers.get("Authorization", "").replace("Bearer ", "")
+
+    ring  = _sentinel_classify(token or None, ip, path)  # type: ignore[arg-type]
+
+    if ring == Ring.TRUSTED:
+        return None     # needlepoint — pass through
+
+    if ring == Ring.GUEST:
+        return None     # no opinion on public traffic
+
+    # PROBE / DEEP / SOVEREIGN — route into the maze
+    node    = get_maze_node(ip)
+    if node == "⬡.entry":
+        node = _maze_random_entry() if _SENTINEL_OK else "⬡.one"
+        set_maze_node(ip, node)
+
+    profile = probe_profile(ip)
+    hits    = profile["probe_hits"]
+
+    # Alert on first escalation to DEEP
+    if needs_alert(ip):
+        _log.warning(
+            "SENTINEL ALERT — %s | hits=%d | paths=%d | last=%s",
+            ip, hits, profile["paths_explored"], profile["last_path"],
+        )
+        if _SENTINEL_ALERT_WEBHOOK:
+            try:
+                import urllib.request as _ur, json as _j
+                _data = _j.dumps({
+                    "text": f"⬡ PROBE ESCALATED — {ip} | {hits} hits | {profile['unique_paths']} unique paths"
+                }).encode()
+                _ur.urlopen(_ur.Request(
+                    _SENTINEL_ALERT_WEBHOOK, data=_data,
+                    headers={"Content-Type": "application/json"}, method="POST"
+                ), timeout=4)
+            except Exception:
+                pass
+
+    # Build response from the correct phase
+    body  = _maze_respond(ring.value, node, hits, profile)
+    delay = _maze_delay(ring.value, hits)
+
+    # Advance maze position
+    from cursiv_v215.web.maze import _next_node
+    next_id, _ = _next_node(node, hits)
+    set_maze_node(ip, next_id)
+
+    await asyncio.sleep(delay)
+    return JSONResponse(content=body, status_code=200)
+
 
 _ALLOWED_ORIGINS = os.environ.get(
     "CURSIV_BOARD_ORIGINS",
@@ -384,10 +470,14 @@ class HeartbeatRequest(BaseModel):
 
 
 @app.post("/remote/heartbeat")
-def remote_heartbeat(
+async def remote_heartbeat(
+    request:        Request,
     body:           HeartbeatRequest,
     x_fleet_token:  str | None = Header(None),
 ):
+    trap = await _run_sentinel(request)
+    if trap is not None:
+        return trap
     _require_fleet(x_fleet_token)
     upsert_fleet_node(
         body.machine_id, body.machine_name, body.username,
@@ -397,10 +487,14 @@ def remote_heartbeat(
 
 
 @app.get("/remote/fleet")
-def remote_fleet(
+async def remote_fleet(
+    request:       Request,
     x_fleet_token: str | None = Header(None),
     since:         int        = Query(default=10, ge=1, le=1440),
 ):
+    trap = await _run_sentinel(request)
+    if trap is not None:
+        return trap
     _require_fleet(x_fleet_token)
     nodes = get_fleet_nodes(since_minutes=since)
     return {"nodes": nodes, "count": len(nodes)}
@@ -421,27 +515,74 @@ class AddCommandUserRequest(BaseModel):
 
 
 @app.get("/remote/fleet/tokens")
-def fleet_list_tokens(x_fleet_token: str | None = Header(None)):
+async def fleet_list_tokens(
+    request:       Request,
+    x_fleet_token: str | None = Header(None),
+):
+    trap = await _run_sentinel(request)
+    if trap is not None:
+        return trap
     _require_owner(x_fleet_token)
     return {"tokens": list_fleet_tokens()}
 
 
 @app.post("/remote/fleet/tokens", status_code=201)
-def fleet_add_token(
+async def fleet_add_token(
+    request:       Request,
     body:          AddCommandUserRequest,
     x_fleet_token: str | None = Header(None),
 ):
+    trap = await _run_sentinel(request)
+    if trap is not None:
+        return trap
     _require_owner(x_fleet_token)
     result = create_fleet_token(body.label, added_by="owner")
-    return result   # includes raw token — shown once, not stored
+    return result
 
 
 @app.delete("/remote/fleet/tokens/{token_id}")
-def fleet_revoke_token(
+async def fleet_revoke_token(
+    request:       Request,
     token_id:      str,
     x_fleet_token: str | None = Header(None),
 ):
+    trap = await _run_sentinel(request)
+    if trap is not None:
+        return trap
     _require_owner(x_fleet_token)
     if not deactivate_fleet_token(token_id):
         raise HTTPException(404, "Token not found")
     return {"ok": True}
+
+
+# ── Catch-all — anything not matched above enters the substrate ───────────────
+
+@app.api_route(
+    "/{full_path:path}",
+    methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"],
+    include_in_schema=False,
+)
+async def substrate_catch_all(full_path: str, request: Request):
+    """
+    Every unrecognized path enters the maze.
+    Scanners, crawlers, and probes find a substrate that goes on forever.
+    Legitimate traffic never reaches here — real routes are matched first.
+    """
+    if not _SENTINEL_OK:
+        raise HTTPException(404, "Not found")
+
+    ip   = request.client.host if request.client else "unknown"
+    path = f"/{full_path}"
+
+    # Force at least a probe classification for catch-all hits
+    from cursiv_v215.web.sentinel import _state, _lock, _PROBE_THRESHOLD
+    s = _state(ip)
+    with _lock:
+        if s.bad_tokens < _PROBE_THRESHOLD:
+            s.bad_tokens = _PROBE_THRESHOLD  # anything hitting unknown paths is a probe
+
+    trap = await _run_sentinel(request)
+    if trap is not None:
+        return trap
+
+    raise HTTPException(404, "Not found")
