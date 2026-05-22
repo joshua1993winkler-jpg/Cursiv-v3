@@ -31,7 +31,7 @@ from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QMainWindow,
     QMenu, QMessageBox, QProgressBar, QPushButton, QScrollArea,
-    QSystemTrayIcon, QTextEdit, QVBoxLayout, QWidget,
+    QProgressDialog, QSystemTrayIcon, QTextEdit, QVBoxLayout, QWidget,
 )
 
 if getattr(sys, "frozen", False):
@@ -56,6 +56,19 @@ _POLL_DEADLINE_S = 30            # seconds to wait for app to bind its port
 _CURRENT_VERSION   = "3.14-U02"
 _GITHUB_API        = "https://api.github.com/repos/joshua1993winkler-jpg/Cursiv/releases/latest"
 _GITHUB_RELEASES   = "https://github.com/joshua1993winkler-jpg/Cursiv/releases"
+
+# ── Ollama ────────────────────────────────────────────────────────────────────
+_OLLAMA_INSTALLER_URL = "https://ollama.com/download/OllamaSetup.exe"
+_OLLAMA_EXE_PATH      = (
+    Path(os.environ.get("LOCALAPPDATA", ""))
+    / "Programs" / "Ollama" / "ollama.exe"
+)
+
+
+def _is_ollama_installed() -> bool:
+    import shutil
+    return bool(shutil.which("ollama")) or _OLLAMA_EXE_PATH.exists()
+
 
 # ── Palette ───────────────────────────────────────────────────────────────────
 BG     = "#0b0b12"
@@ -563,6 +576,45 @@ class CursivLauncher(QMainWindow):
 
         col.addWidget(hint_box)
 
+        # ── Ollama banner (only when Ollama not detected) ──────────────────
+        if not _is_ollama_installed():
+            ollama_box = QWidget()
+            ollama_box.setStyleSheet(
+                "background: #1a1200; border: 1px solid #7a4d00; border-radius: 6px;"
+            )
+            ob_lay = QHBoxLayout(ollama_box)
+            ob_lay.setContentsMargins(12, 8, 12, 8)
+            ob_lay.setSpacing(10)
+
+            warn_lbl = QLabel("⚠  Ollama not found — required for local AI")
+            warn_lbl.setStyleSheet(
+                "color: #e8a020; font-size: 11px; background: transparent; border: none;"
+            )
+            warn_lbl.setWordWrap(True)
+            ob_lay.addWidget(warn_lbl, 1)
+
+            self._ollama_btn = QPushButton("Install Ollama")
+            self._ollama_btn.setFixedHeight(26)
+            self._ollama_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self._ollama_btn.setToolTip(
+                "Download and run the official Ollama installer for Windows"
+            )
+            self._ollama_btn.setStyleSheet("""
+                QPushButton {
+                    background: #7a4d00; color: #ffe0a0;
+                    font-size: 11px; font-weight: 600;
+                    border: 1px solid #b07000; border-radius: 4px;
+                    padding: 2px 10px;
+                }
+                QPushButton:hover   { background: #a06500; }
+                QPushButton:pressed { background: #5a3a00; }
+                QPushButton:disabled { color: #666; border-color: #444; }
+            """)
+            self._ollama_btn.clicked.connect(self._install_ollama)
+            ob_lay.addWidget(self._ollama_btn)
+
+            col.addWidget(ollama_box)
+
         _util_style = f"""
             QPushButton {{
                 background: transparent; color: {SILV2};
@@ -778,6 +830,17 @@ class CursivLauncher(QMainWindow):
     # ── Winkler-Codex model download ─────────────────────────────────────
 
     def _download_codex_models(self):
+        if not _is_ollama_installed():
+            reply = QMessageBox.question(
+                self, "Ollama Required",
+                "Winkler-Codex models run inside Ollama, which isn't installed yet.\n\n"
+                "Install Ollama first?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self._install_ollama()
+            return
+
         msg = QMessageBox(self)
         msg.setWindowTitle("Winkler-Codex Download")
         msg.setIcon(QMessageBox.Icon.Warning)
@@ -842,6 +905,110 @@ class CursivLauncher(QMainWindow):
             self._codex_dl_btn.setEnabled(True),
             self._codex_dl_btn.setText("Winkler-Codex Download"),
         ))
+
+    # ── Ollama installer ──────────────────────────────────────────────────
+
+    def _install_ollama(self):
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Install Ollama")
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.setText("<b>Download and install Ollama?</b>")
+        msg.setInformativeText(
+            "Ollama powers all local AI features in Cursiv.\n\n"
+            "The official Ollama installer (~50 MB) will be downloaded, "
+            "then launched — you'll see its normal Windows install window.\n\n"
+            "Ollama installs to:\n"
+            "  %LOCALAPPDATA%\\Programs\\Ollama\\\n\n"
+            "This is the standard user-level location; no admin rights needed."
+        )
+        msg.setStandardButtons(
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel
+        )
+        msg.button(QMessageBox.StandardButton.Ok).setText("Download & Install")
+        msg.button(QMessageBox.StandardButton.Cancel).setText("Not Now")
+        msg.setStyleSheet(QSS)
+
+        if msg.exec() != QMessageBox.StandardButton.Ok:
+            return
+
+        self._ollama_btn.setEnabled(False)
+        self._ollama_btn.setText("Downloading…")
+        self._set_status("Downloading Ollama installer…")
+
+        dest = Path(tempfile.gettempdir()) / "OllamaSetup.exe"
+
+        progress = QProgressDialog("Downloading Ollama installer…", "Cancel", 0, 100, self)
+        progress.setWindowTitle("Cursiv — Installing Ollama")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumWidth(380)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.setStyleSheet(
+            f"QProgressDialog {{ background: {BG2}; color: {SILVER}; }}"
+            f"QProgressBar {{ background: {BG}; border: 1px solid {BORDER}; }}"
+            f"QProgressBar::chunk {{ background: #e8a020; }}"
+            f"QPushButton {{ background: {BG}; color: {SILVER}; border: 1px solid {BORDER}; }}"
+        )
+        progress.setValue(0)
+        progress.show()
+
+        cancelled = [False]
+
+        def _on_cancel():
+            cancelled[0] = True
+
+        progress.canceled.connect(_on_cancel)
+
+        def _download():
+            try:
+                def _reporthook(block_num, block_size, total_size):
+                    if cancelled[0] or total_size <= 0:
+                        return
+                    pct = min(int(block_num * block_size * 100 / total_size), 99)
+                    QTimer.singleShot(0, lambda p=pct: progress.setValue(p))
+
+                urllib.request.urlretrieve(
+                    _OLLAMA_INSTALLER_URL, str(dest), reporthook=_reporthook
+                )
+
+                if cancelled[0]:
+                    return
+
+                QTimer.singleShot(0, lambda: _launch_installer(dest))
+
+            except Exception as exc:
+                QTimer.singleShot(0, lambda e=str(exc): _on_error(e))
+
+        def _launch_installer(exe_path: Path):
+            progress.close()
+            self._set_status("Ollama installer launched — follow the on-screen steps.")
+            try:
+                subprocess.Popen(
+                    [str(exe_path)],
+                    cwd=str(exe_path.parent),
+                )
+            except Exception as exc:
+                QMessageBox.warning(
+                    self, "Ollama Installer",
+                    f"Download complete but could not launch installer:\n{exe_path}\n\n{exc}"
+                )
+            finally:
+                self._ollama_btn.setEnabled(True)
+                self._ollama_btn.setText("Install Ollama")
+
+        def _on_error(err: str):
+            progress.close()
+            self._set_status("Ollama download failed.")
+            QMessageBox.warning(
+                self, "Ollama Download Failed",
+                f"Could not download the Ollama installer:\n\n{err}\n\n"
+                "Check your internet connection and try again, or visit:\n"
+                "https://ollama.com/download"
+            )
+            self._ollama_btn.setEnabled(True)
+            self._ollama_btn.setText("Install Ollama")
+
+        threading.Thread(target=_download, daemon=True).start()
 
     # ── Substrate Browser ─────────────────────────────────────────────────
 
