@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -124,10 +124,14 @@ def create_post(user_id: str, username: str, text: str, source: str) -> dict[str
 
 
 def get_posts(limit: int = 100) -> list[dict[str, Any]]:
+    # 30-day rolling window — posts age out at the same rate they came in
+    cutoff = (datetime.utcnow() - timedelta(days=30)).isoformat()
     with _conn() as c:
         rows = c.execute(
             "SELECT id, username, text, source, timestamp FROM posts "
-            "ORDER BY timestamp DESC LIMIT ?", (limit,)
+            "WHERE timestamp >= ? "
+            "ORDER BY timestamp DESC LIMIT ?",
+            (cutoff, limit),
         ).fetchall()
     return [dict(r) for r in rows]
 
