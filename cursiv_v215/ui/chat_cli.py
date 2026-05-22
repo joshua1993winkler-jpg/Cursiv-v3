@@ -413,6 +413,15 @@ except Exception:
     def _board_whoami():       return None
     def _board_blast(t, s):    return (False, "board client unavailable")
 
+# ── Substrate Fork — RUW / Curs. ────────────────────────────────────────────
+try:
+    from cursiv_v215.substrate.activator import get_activator as _get_activator
+    _SUBSTRATE_OK = True
+except Exception:
+    _SUBSTRATE_OK = False
+    def _get_activator(): return None  # type: ignore
+
+
 def _extract_blast_synthesis(full_text: str) -> str:
     """
     Extract just the final answer paragraph from group_discovery output.
@@ -1058,6 +1067,14 @@ _HELP = f"""\
                             marked  full_token_required: true  in territories.json
   {LGOLD}hey council <question>{RESET}    inline routing prefix (same as council)
 
+  {GOLD}── Substrate Fork — RUW / Curs. ─────────────────────────────{RESET}
+  {LGOLD}substrate{RESET}                 activate last council synthesis into RUW layer
+  {LGOLD}substrate status{RESET}          show RUW layer state (nodes, edges, address)
+  {LGOLD}substrate weave <query>{RESET}   read substrate — find resonant nodes for a query
+                            Each activation builds attractor basins over time.
+                            The substrate learns the shape of your thinking.
+                            Address format: Curs.html://ruw.www.cursiv.<suffix>/<id>
+
   {GOLD}── Blast (public board transmission) ──────────────────────────{RESET}
   {LGOLD}blast register <username>{RESET} create your board account
   {LGOLD}blast login <username>{RESET}    log in to the board
@@ -1437,6 +1454,7 @@ def main() -> None:
                 if result is not None:
                     _last_council_synthesis = result.synthesis   # stored for blast
                     cfg["_last_council_synthesis"] = result.synthesis
+                    cfg["_last_council_query"]     = _raw_question
                     _session_append_cli(result.query, result.synthesis, "async_council")
                     if _STRAND_OK and result.synthesis and len(result.synthesis) > 100:
                         _strand_save(
@@ -1896,6 +1914,67 @@ def main() -> None:
                           f"{DIM}id:{_c.get('key_id','?')[:8]}  "
                           f"added:{_c.get('added','?')[:10]}{RESET}")
             print()
+            continue
+
+        # ── Substrate Fork — RUW / Curs. ─────────────────────────────────────
+        elif cmd == "substrate" or cmd.startswith("substrate "):
+            sub = cmd[10:].strip() if cmd.startswith("substrate ") else ""
+            if not _SUBSTRATE_OK:
+                print(f"\n  {RED}Substrate module unavailable.{RESET}\n")
+                continue
+
+            _act = _get_activator()
+
+            if sub == "status":
+                st = _act.status()
+                ly = st["layer"]
+                print(f"\n  {GOLD}⬡ SUBSTRATE — RUW LAYER{RESET}")
+                print(f"  {DIM}Nodes:       {ly['nodes']}{RESET}")
+                print(f"  {DIM}Edges:       {ly['edges']}{RESET}")
+                print(f"  {DIM}Activations: {st['activations']}{RESET}")
+                print(f"  {DIM}Address:     {ly['address']}{RESET}")
+                print(f"  {DIM}Threshold:   {ly['threshold']}{RESET}\n")
+
+            elif sub.startswith("weave "):
+                _wq = sub[6:].strip()
+                if not _wq:
+                    print(f"  {DIM}Usage: substrate weave <query>{RESET}\n")
+                else:
+                    hits = _act.weave(_wq, top_k=5)
+                    print(f"\n  {GOLD}⬡ SUBSTRATE WEAVE — resonant nodes{RESET}")
+                    if not hits:
+                        print(f"  {DIM}No nodes in layer yet. Run a council deliberation first.{RESET}")
+                    for nid, score in hits:
+                        bar = "█" * int(score * 12)
+                        print(f"  {DIM}{bar:<12}{RESET}  {score:.3f}  {LGOLD}{nid}{RESET}")
+                    print()
+
+            elif sub == "activate" or not sub:
+                _synth = cfg.get("_last_council_synthesis", "")
+                _query = cfg.get("_last_council_query", "")
+                if not _synth:
+                    print(f"\n  {GOLD}⬡ No council synthesis yet.{RESET}")
+                    print(f"  {DIM}Run a council deliberation first.{RESET}\n")
+                    continue
+                result = _act.activate(_synth, query=_query, session_id=_CLI_SESSION_ID)
+                print(f"\n  {GOLD}⬡ SUBSTRATE ACTIVATED{RESET}")
+                print(f"  {DIM}RUW Address:  {RESET}{LGOLD}{result['ruw_address']}{RESET}")
+                print(f"  {DIM}Resonance:    {RESET}{result['resonance']:.4f}")
+                print(f"  {DIM}Attractor E:  {RESET}{result['attractor_energy']:.4f}")
+                print(f"  {DIM}Layer nodes:  {RESET}{result['layer_state']['nodes']}")
+                if result["related"]:
+                    print(f"  {DIM}Related:{RESET}")
+                    for nid, score in result["related"][:3]:
+                        print(f"    {DIM}{score:.3f}  {nid}{RESET}")
+                print()
+                # Store RUW address for reference
+                cfg["_last_ruw_address"] = result["ruw_address"]
+
+            else:
+                print(f"\n  {LGOLD}substrate{RESET}             activate last council synthesis")
+                print(f"  {LGOLD}substrate activate{RESET}    same")
+                print(f"  {LGOLD}substrate status{RESET}      show RUW layer state")
+                print(f"  {LGOLD}substrate weave <q>{RESET}   find resonant nodes for a query\n")
             continue
 
         # ── Blast — post council synthesis to public board ────────────────────
